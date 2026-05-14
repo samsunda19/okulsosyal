@@ -1,12 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, deleteDoc, doc, getDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
   const [gonderiler, setGonderiler] = useState([]);
   const [yukleniyor, setYukleniyor] = useState(false);
+  const [kullaniciIsim, setKullaniciIsim] = useState("");
+
+  useEffect(() => {
+    const isimGetir = async () => {
+      const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+      if (userDoc.exists()) {
+        setKullaniciIsim(userDoc.data().isim || auth.currentUser.email);
+      }
+    };
+    isimGetir();
+    gonderileriGetir();
+  }, []);
 
   const gonderileriGetir = async () => {
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
@@ -15,14 +27,12 @@ function StudentDashboard() {
     setGonderiler(liste);
   };
 
-  useEffect(() => { gonderileriGetir(); }, []);
-
   const gonderiYap = async () => {
     if (!gonderi.trim()) return;
     setYukleniyor(true);
     await addDoc(collection(db, "posts"), {
       icerik: gonderi,
-      yazar: auth.currentUser.email,
+      yazar: kullaniciIsim || auth.currentUser.email,
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp()
     });
