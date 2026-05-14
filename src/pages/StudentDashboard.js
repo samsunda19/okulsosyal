@@ -25,6 +25,7 @@ function StudentDashboard() {
     await addDoc(collection(db, "posts"), {
       icerik: gonderi,
       yazar: auth.currentUser.email,
+      yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp()
     });
     setGonderi("");
