@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./AuthContext";
 import { useState } from "react";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth } from "./firebase";
+import StudentDashboard from "./pages/StudentDashboard";
 
 function LoginForm({ tip, onKapat }) {
   const [email, setEmail] = useState("");
@@ -43,25 +44,15 @@ function LoginForm({ tip, onKapat }) {
   );
 }
 
-function CikisButonu() {
-  const handleCikis = () => signOut(auth);
-  return (
-    <button onClick={handleCikis}
-      style={{ position:"fixed", top:"16px", right:"16px", padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer" }}>
-      Cikis Yap
-    </button>
-  );
-}
-
 function AppContent() {
   const { currentUser, userRole } = useAuth();
   const [aktifForm, setAktifForm] = useState(null);
 
   if (currentUser) {
-    if (userRole === "admin") return <div><CikisButonu /><h1>Admin Paneli - Hos geldin Tugrul!</h1></div>;
-    if (userRole === "teacher") return <div><CikisButonu /><h1>Ogretmen Paneli</h1></div>;
-    if (userRole === "parent") return <div><CikisButonu /><h1>Veli Paneli</h1></div>;
-    if (userRole === "student") return <div><CikisButonu /><h1>Ogrenci Ekrani</h1></div>;
+    if (userRole === "admin") return <div style={{padding:"20px"}}><button onClick={() => signOut(auth)} style={{padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer"}}>Cikis</button><h1>Admin Paneli - Hos geldin Tugrul!</h1></div>;
+    if (userRole === "teacher") return <div style={{padding:"20px"}}><button onClick={() => signOut(auth)} style={{padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer"}}>Cikis</button><h1>Ogretmen Paneli</h1></div>;
+    if (userRole === "parent") return <div style={{padding:"20px"}}><button onClick={() => signOut(auth)} style={{padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer"}}>Cikis</button><h1>Veli Paneli</h1></div>;
+    if (userRole === "student") return <StudentDashboard />;
   }
 
   return (
