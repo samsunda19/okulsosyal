@@ -2,13 +2,13 @@ import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
 import { collection, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
+import ProfilSayfasi from "./ProfilSayfasi";
 
 function AdminDashboard() {
   const [gonderiler, setGonderiler] = useState([]);
   const [kullaniciler, setKullaniciler] = useState({});
   const [yukleniyor, setYukleniyor] = useState(true);
-  const [secilenKullanici, setSecilenKullanici] = useState(null);
-  const [dondurmeSuresi, setDondurmeSuresi] = useState("");
+  const [secilenProfil, setSecilenProfil] = useState(null);
 
   useEffect(() => {
     const verileriGetir = async () => {
@@ -34,113 +34,15 @@ function AdminDashboard() {
     setGonderiler(prev => prev.filter(g => g.id !== gonderiId));
   };
 
-  const handleYazarTikla = (yazarUid) => {
-    const kullanici = Object.values(kullaniciler).find(k => k.id === yazarUid);
-    if (kullanici) setSecilenKullanici(kullanici);
-  };
-
-  const handleDondur = async () => {
-    if (!dondurmeSuresi) { alert("Lutfen sure secin!"); return; }
-
-    let bitis = null;
-    const simdi = new Date();
-    if (dondurmeSuresi === "1saat") bitis = new Date(simdi.getTime() + 1 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "1gun") bitis = new Date(simdi.getTime() + 24 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "1hafta") bitis = new Date(simdi.getTime() + 7 * 24 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "1ay") bitis = new Date(simdi.getTime() + 30 * 24 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "suresiz") bitis = null;
-
-    await updateDoc(doc(db, "users", secilenKullanici.id), {
-      dondurulmus: true,
-      dondurulmaBitis: bitis ? bitis.toISOString() : null
-    });
-
-    setKullaniciler(prev => ({
-      ...prev,
-      [secilenKullanici.id]: {
-        ...prev[secilenKullanici.id],
-        dondurulmus: true,
-        dondurulmaBitis: bitis ? bitis.toISOString() : null
-      }
-    }));
-
-    setSecilenKullanici(null);
-    setDondurmeSuresi("");
-    alert("Kullanici donduruldu!");
-  };
-
-  const handleCoz = async () => {
-    await updateDoc(doc(db, "users", secilenKullanici.id), {
-      dondurulmus: false,
-      dondurulmaBitis: null
-    });
-    setKullaniciler(prev => ({
-      ...prev,
-      [secilenKullanici.id]: { ...prev[secilenKullanici.id], dondurulmus: false, dondurulmaBitis: null }
-    }));
-    setSecilenKullanici(null);
-    alert("Dondurma kaldirildi!");
-  };
-
-  const dondurmaBitisYazisi = (bitis) => {
-    if (!bitis) return "Suresiz";
-    return new Date(bitis).toLocaleString("tr-TR");
-  };
-
   return (
     <div style={{ maxWidth:"700px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
 
-      {secilenKullanici && (
-        <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
-          <div style={{ background:"white", padding:"30px", borderRadius:"16px", width:"320px" }}>
-            <h3 style={{ marginBottom:"8px", color:"#1f2937" }}>Hesap Yonetimi</h3>
-            <p style={{ color:"#6b7280", fontSize:"14px", marginBottom:"20px" }}>
-              <strong>{secilenKullanici.email}</strong>
-            </p>
-
-            {secilenKullanici.dondurulmus ? (
-              <>
-                <p style={{ color:"#ef4444", fontSize:"14px", marginBottom:"16px" }}>
-                  🔒 Dondurulmus — {dondurmaBitisYazisi(secilenKullanici.dondurulmaBitis)}
-                </p>
-                <div style={{ display:"flex", gap:"10px" }}>
-                  <button onClick={handleCoz}
-                    style={{ flex:1, padding:"10px", background:"#10b981", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    🔓 Dondurmayi Kaldir
-                  </button>
-                  <button onClick={() => { setSecilenKullanici(null); setDondurmeSuresi(""); }}
-                    style={{ flex:1, padding:"10px", background:"#e5e7eb", color:"#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    Iptal
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <select
-                  value={dondurmeSuresi}
-                  onChange={e => setDondurmeSuresi(e.target.value)}
-                  style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"14px", marginBottom:"16px" }}>
-                  <option value="">Sure secin</option>
-                  <option value="1saat">1 Saat</option>
-                  <option value="1gun">1 Gun</option>
-                  <option value="1hafta">1 Hafta</option>
-                  <option value="1ay">1 Ay</option>
-                  <option value="suresiz">Suresiz</option>
-                </select>
-                <div style={{ display:"flex", gap:"10px" }}>
-                  <button onClick={handleDondur}
-                    style={{ flex:1, padding:"10px", background:"#f59e0b", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    🔒 Dondur
-                  </button>
-                  <button onClick={() => { setSecilenKullanici(null); setDondurmeSuresi(""); }}
-                    style={{ flex:1, padding:"10px", background:"#e5e7eb", color:"#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    Iptal
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+      {secilenProfil && (
+        <ProfilSayfasi
+          kullaniciId={secilenProfil}
+          onKapat={() => setSecilenProfil(null)}
+          mevcutKullaniciRol="admin"
+        />
       )}
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"24px" }}>
@@ -171,7 +73,7 @@ function AdminDashboard() {
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
                     <small
-                      onClick={() => handleYazarTikla(g.yazarUid)}
+                      onClick={() => setSecilenProfil(g.yazarUid)}
                       style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline", fontSize:"13px" }}>
                       {g.yazar}
                     </small>

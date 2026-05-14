@@ -2,13 +2,13 @@ import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
 import { doc, getDocFromServer, getDoc, collection, getDocs, deleteDoc, updateDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
+import ProfilSayfasi from "./ProfilSayfasi";
 
 function TeacherDashboard() {
   const [gonderiler, setGonderiler] = useState([]);
   const [ogrenciBilgileri, setOgrenciBilgileri] = useState({});
   const [yukleniyor, setYukleniyor] = useState(true);
-  const [secilenOgrenci, setSecilenOgrenci] = useState(null);
-  const [dondurmeSuresi, setDondurmeSuresi] = useState("");
+  const [secilenProfil, setSecilenProfil] = useState(null);
 
   useEffect(() => {
     const verileriGetir = async () => {
@@ -40,114 +40,15 @@ function TeacherDashboard() {
     setGonderiler(prev => prev.filter(g => g.id !== gonderiId));
   };
 
-  const handleYazarTikla = (yazarUid) => {
-    const ogrenci = ogrenciBilgileri[yazarUid];
-    if (ogrenci) setSecilenOgrenci(ogrenci);
-  };
-
-  const handleDondur = async () => {
-    if (!dondurmeSuresi) { alert("Lutfen sure secin!"); return; }
-
-    let bitis = null;
-    const simdi = new Date();
-    if (dondurmeSuresi === "1saat") bitis = new Date(simdi.getTime() + 1 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "1gun") bitis = new Date(simdi.getTime() + 24 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "1hafta") bitis = new Date(simdi.getTime() + 7 * 24 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "1ay") bitis = new Date(simdi.getTime() + 30 * 24 * 60 * 60 * 1000);
-    else if (dondurmeSuresi === "suresiz") bitis = null;
-
-    await updateDoc(doc(db, "users", secilenOgrenci.id), {
-      dondurulmus: true,
-      dondurulmaBitis: bitis ? bitis.toISOString() : null
-    });
-
-    setOgrenciBilgileri(prev => ({
-      ...prev,
-      [secilenOgrenci.id]: {
-        ...prev[secilenOgrenci.id],
-        dondurulmus: true,
-        dondurulmaBitis: bitis ? bitis.toISOString() : null
-      }
-    }));
-
-    setSecilenOgrenci(null);
-    setDondurmeSuresi("");
-    alert("Ogrenci donduruldu!");
-  };
-
-  const handleCoz = async () => {
-    await updateDoc(doc(db, "users", secilenOgrenci.id), {
-      dondurulmus: false,
-      dondurulmaBitis: null
-    });
-    setOgrenciBilgileri(prev => ({
-      ...prev,
-      [secilenOgrenci.id]: { ...prev[secilenOgrenci.id], dondurulmus: false, dondurulmaBitis: null }
-    }));
-    setSecilenOgrenci(null);
-    alert("Dondurma kaldirildi!");
-  };
-
-  const dondurmaBitisYazisi = (bitis) => {
-    if (!bitis) return "Suresiz";
-    return new Date(bitis).toLocaleString("tr-TR");
-  };
-
   return (
     <div style={{ maxWidth:"650px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
 
-      {/* Modal */}
-      {secilenOgrenci && (
-        <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
-          <div style={{ background:"white", padding:"30px", borderRadius:"16px", width:"320px" }}>
-            <h3 style={{ marginBottom:"8px", color:"#1f2937" }}>Hesap Yonetimi</h3>
-            <p style={{ color:"#6b7280", fontSize:"14px", marginBottom:"20px" }}>
-              <strong>{secilenOgrenci.email}</strong>
-            </p>
-
-            {secilenOgrenci.dondurulmus ? (
-              <>
-                <p style={{ color:"#ef4444", fontSize:"14px", marginBottom:"16px" }}>
-                  🔒 Dondurulmus — {dondurmaBitisYazisi(secilenOgrenci.dondurulmaBitis)}
-                </p>
-                <div style={{ display:"flex", gap:"10px" }}>
-                  <button onClick={handleCoz}
-                    style={{ flex:1, padding:"10px", background:"#10b981", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    🔓 Dondurmayi Kaldir
-                  </button>
-                  <button onClick={() => { setSecilenOgrenci(null); setDondurmeSuresi(""); }}
-                    style={{ flex:1, padding:"10px", background:"#e5e7eb", color:"#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    Iptal
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <select
-                  value={dondurmeSuresi}
-                  onChange={e => setDondurmeSuresi(e.target.value)}
-                  style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"14px", marginBottom:"16px" }}>
-                  <option value="">Sure secin</option>
-                  <option value="1saat">1 Saat</option>
-                  <option value="1gun">1 Gun</option>
-                  <option value="1hafta">1 Hafta</option>
-                  <option value="1ay">1 Ay</option>
-                  <option value="suresiz">Suresiz</option>
-                </select>
-                <div style={{ display:"flex", gap:"10px" }}>
-                  <button onClick={handleDondur}
-                    style={{ flex:1, padding:"10px", background:"#f59e0b", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    🔒 Dondur
-                  </button>
-                  <button onClick={() => { setSecilenOgrenci(null); setDondurmeSuresi(""); }}
-                    style={{ flex:1, padding:"10px", background:"#e5e7eb", color:"#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    Iptal
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+      {secilenProfil && (
+        <ProfilSayfasi
+          kullaniciId={secilenProfil}
+          onKapat={() => setSecilenProfil(null)}
+          mevcutKullaniciRol="teacher"
+        />
       )}
 
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"24px" }}>
@@ -178,7 +79,7 @@ function TeacherDashboard() {
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
                     <small
-                      onClick={() => handleYazarTikla(g.yazarUid)}
+                      onClick={() => setSecilenProfil(g.yazarUid)}
                       style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline", fontSize:"13px" }}>
                       {g.yazar}
                     </small>
