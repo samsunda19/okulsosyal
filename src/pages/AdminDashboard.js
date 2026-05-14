@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 
 function AdminDashboard() {
@@ -90,7 +90,6 @@ function AdminDashboard() {
   return (
     <div style={{ maxWidth:"700px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
 
-      {/* Modal */}
       {secilenKullanici && (
         <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
           <div style={{ background:"white", padding:"30px", borderRadius:"16px", width:"320px" }}>
