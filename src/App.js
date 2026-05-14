@@ -1,7 +1,7 @@
 import './App.css';
 import { AuthProvider, useAuth } from "./AuthContext";
 import { useState } from "react";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "./firebase";
 import StudentDashboard from "./pages/StudentDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
