@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, getDocs, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 
 function AdminDashboard() {
@@ -152,7 +152,6 @@ function AdminDashboard() {
         </button>
       </div>
 
-      {/* Tum Gonderiler */}
       {yukleniyor ? (
         <p>Yukleniyor...</p>
       ) : gonderiler.length === 0 ? (
