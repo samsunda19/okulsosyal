@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, addDoc, getDocs, orderBy, query, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 
 function StudentDashboard() {
@@ -11,13 +11,11 @@ function StudentDashboard() {
   const gonderileriGetir = async () => {
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     setGonderiler(liste);
   };
 
-  useEffect(() => {
-    gonderileriGetir();
-  }, []);
+  useEffect(() => { gonderileriGetir(); }, []);
 
   const gonderiYap = async () => {
     if (!gonderi.trim()) return;
@@ -31,6 +29,12 @@ function StudentDashboard() {
     setGonderi("");
     await gonderileriGetir();
     setYukleniyor(false);
+  };
+
+  const gonderiSil = async (id, yazarUid) => {
+    if (yazarUid !== auth.currentUser.uid) return;
+    await deleteDoc(doc(db, "posts", id));
+    await gonderileriGetir();
   };
 
   return (
@@ -58,9 +62,15 @@ function StudentDashboard() {
 
       <div>
         {gonderiler.map(g => (
-          <div key={g.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px" }}>
+          <div key={g.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px", position:"relative" }}>
             <p style={{ margin:"0 0 8px 0", fontSize:"15px" }}>{g.icerik}</p>
             <small style={{ color:"#888" }}>{g.yazar}</small>
+            {g.yazarUid === auth.currentUser.uid && (
+              <button onClick={() => gonderiSil(g.id, g.yazarUid)}
+                style={{ position:"absolute", top:"12px", right:"12px", padding:"4px 10px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
+                Sil
+              </button>
+            )}
           </div>
         ))}
       </div>

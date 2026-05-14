@@ -6,6 +6,7 @@ import { auth } from "./firebase";
 import StudentDashboard from "./pages/StudentDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 
 function LoginForm({ tip, onKapat }) {
   const [email, setEmail] = useState("");
@@ -51,7 +52,7 @@ function AppContent() {
   const [aktifForm, setAktifForm] = useState(null);
 
   if (currentUser) {
-    if (userRole === "admin") return <div style={{padding:"20px"}}><button onClick={() => signOut(auth)} style={{padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer"}}>Cikis</button><h1>Admin Paneli - Hos geldin Tugrul!</h1></div>;
+    if (userRole === "admin") return <AdminDashboard />;
     if (userRole === "teacher") return <TeacherDashboard />;
     if (userRole === "parent") return <ParentDashboard />;
     if (userRole === "student") return <StudentDashboard />;

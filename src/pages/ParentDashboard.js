@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 
 function ParentDashboard() {
@@ -21,6 +21,12 @@ function ParentDashboard() {
     };
     verileriGetir();
   }, []);
+
+  const handleSil = async (gonderiId) => {
+    if (!window.confirm("Bu paylasimi silmek istediginizden emin misiniz?")) return;
+    await deleteDoc(doc(db, "posts", gonderiId));
+    setCocukGonderiler(prev => prev.filter(g => g.id !== gonderiId));
+  };
 
   return (
     <div style={{ maxWidth:"600px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
@@ -44,7 +50,13 @@ function ParentDashboard() {
           {cocukGonderiler.map(g => (
             <div key={g.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px" }}>
               <p style={{ margin:"0 0 8px 0", fontSize:"15px" }}>{g.icerik}</p>
-              <small style={{ color:"#888" }}>{g.yazar}</small>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <small style={{ color:"#888" }}>{g.yazar}</small>
+                <button onClick={() => handleSil(g.id)}
+                  style={{ padding:"6px 12px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"13px" }}>
+                  🗑️ Sil
+                </button>
+              </div>
             </div>
           ))}
         </div>
