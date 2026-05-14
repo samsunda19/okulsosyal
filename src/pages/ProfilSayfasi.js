@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { doc, getDoc, updateDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, getDocs } from "firebase/firestore";
 
 function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   const [profil, setProfil] = useState(null);
@@ -77,9 +77,8 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   );
 
   return (
-    <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999, overflowY:"auto" }}>
-      
-      {/* Dondurma Modali */}
+    <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
+
       {dondurmModal && (
         <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.7)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:1000 }}>
           <div style={{ background:"white", padding:"30px", borderRadius:"16px", width:"300px" }}>
@@ -108,14 +107,12 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       )}
 
       <div style={{ background:"white", borderRadius:"20px", width:"90%", maxWidth:"500px", maxHeight:"85vh", overflowY:"auto", padding:"30px", position:"relative" }}>
-        
-        {/* Kapat butonu */}
+
         <button onClick={onKapat}
           style={{ position:"absolute", top:"16px", right:"16px", background:"#e5e7eb", border:"none", borderRadius:"50%", width:"32px", height:"32px", cursor:"pointer", fontSize:"16px" }}>
           ✕
         </button>
 
-        {/* Avatar */}
         <div style={{ textAlign:"center", marginBottom:"20px" }}>
           <div style={{ width:"80px", height:"80px", borderRadius:"50%", background:"linear-gradient(135deg, #6C63FF, #FF6584)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"32px", margin:"0 auto 10px" }}>
             👤
@@ -137,7 +134,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
           )}
         </div>
 
-        {/* Bilgiler */}
         <div style={{ background:"#f9fafb", borderRadius:"12px", padding:"16px", marginBottom:"20px" }}>
           {duzenliyor ? (
             <>
@@ -161,7 +157,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
           )}
         </div>
 
-        {/* Butonlar */}
         <div style={{ display:"flex", gap:"10px", marginBottom:"20px" }}>
           {benimProfilim && (
             duzenliyor ? (
@@ -198,7 +193,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
           )}
         </div>
 
-        {/* Gonderiler */}
         <h3 style={{ fontSize:"16px", color:"#374151", marginBottom:"12px" }}>
           Paylasimlar ({gonderiler.length})
         </h3>
