@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, getDocs, deleteDoc, doc, orderBy, query, updateDoc } from "firebase/firestore";
+import { collection, getDocs, deleteDoc, doc, orderBy, query, updateDoc, arrayUnion } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 
@@ -40,8 +40,11 @@ function AdminDashboard() {
 
     const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
     const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    // Sadece admine iletilen bildirimler
-    const adminBildirimler = tumReports.filter(r => r.adminIletildi === true);
+    const adminBildirimler = tumReports.filter(r => {
+      const iletilmis = r.adminIletildi === true;
+      const kaldirilmis = (r.kaldirildi || []).includes(auth.currentUser.uid);
+      return iletilmis && !kaldirilmis;
+    });
     setBildirimler(adminBildirimler);
 
     setYukleniyor(false);
@@ -79,9 +82,11 @@ function AdminDashboard() {
     setBildirimler(prev => prev.map(b => b.id === reportId ? { ...b, okundu: true } : b));
   };
 
-  const bildirimSil = async (reportId) => {
-    if (!window.confirm("Bu bildirimi silmek istediginizden emin misiniz?")) return;
-    await deleteDoc(doc(db, "reports", reportId));
+  const bildirimKaldir = async (reportId) => {
+    if (!window.confirm("Bu bildirimi listeden kaldirmak istediginizden emin misiniz?")) return;
+    await updateDoc(doc(db, "reports", reportId), {
+      kaldirildi: arrayUnion(auth.currentUser.uid)
+    });
     setBildirimler(prev => prev.filter(b => b.id !== reportId));
   };
 
@@ -234,9 +239,9 @@ function AdminDashboard() {
                         ✓ Okundu olarak isaretle
                       </button>
                     )}
-                    <button onClick={() => bildirimSil(b.id)}
-                      style={{ padding:"6px 12px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
-                      🗑️ Sil
+                    <button onClick={() => bildirimKaldir(b.id)}
+                      style={{ padding:"6px 12px", background:"#6b7280", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
+                      🗑️ Kaldir
                     </button>
                   </div>
                 </div>
