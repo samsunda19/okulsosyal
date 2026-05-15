@@ -80,21 +80,20 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       kullaniciPosts.sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
       setGonderiler(kullaniciPosts);
 
-      // Istatistikler
       let yorumSayisi = 0;
       let begeniSayisi = 0;
       for (const post of tumPosts) {
         const yorumSnapshot = await getDocs(collection(db, "posts", post.id, "comments"));
-        yorumSnapshot.docs.forEach(d => {
+        const yorumDocs = yorumSnapshot.docs;
+        for (const d of yorumDocs) {
           if (d.data().yazarUid === kullaniciId) yorumSayisi++;
-        });
+        }
         if (post.yazarUid === kullaniciId) {
           begeniSayisi += (post.begenenler || []).length;
         }
       }
       setIstatistik({ paylasim: kullaniciPosts.length, yorum: yorumSayisi, begeni: begeniSayisi });
 
-      // Ozel arka plan (localStorage)
       const ozelKayit = localStorage.getItem("ozelArkaplan_" + kullaniciId);
       if (ozelKayit) setOzelArkaplan(ozelKayit);
 
@@ -113,7 +112,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
     const guncelle = {};
     if (arkaplanId !== undefined) {
       guncelle.arkaplan = arkaplanId;
-      // Ozel arkaplandan vazgeciyorsa sil
       localStorage.removeItem("ozelArkaplan_" + kullaniciId);
       setOzelArkaplan(null);
     }
@@ -134,7 +132,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       const base64 = event.target.result;
       localStorage.setItem("ozelArkaplan_" + kullaniciId, base64);
       setOzelArkaplan(base64);
-      // Firestore'da ozel oldugunu isaretle
       await updateDoc(doc(db, "users", kullaniciId), { arkaplan: "ozel" });
       setProfil(prev => ({ ...prev, arkaplan: "ozel" }));
       alert("Arka plan kaydedildi! Sadece bu cihazda gorunecek.");
@@ -211,7 +208,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
 
       <div style={{ background:"white", borderRadius:"20px", width:"90%", maxWidth:"500px", maxHeight:"85vh", overflowY:"auto", padding:"0", position:"relative" }}>
 
-        {/* Renkli ust banner */}
         <div style={{ background: avatarRenk, height:"100px", borderRadius:"20px 20px 0 0", position:"relative" }}>
           <button onClick={onKapat}
             style={{ position:"absolute", top:"16px", right:"16px", background:"rgba(255,255,255,0.3)", border:"none", borderRadius:"50%", width:"32px", height:"32px", cursor:"pointer", fontSize:"16px", color:"white", fontWeight:"700" }}>
@@ -220,7 +216,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
         </div>
 
         <div style={{ padding:"0 30px 30px" }}>
-          {/* Avatar */}
           <div style={{ textAlign:"center", marginTop:"-50px", marginBottom:"16px" }}>
             <div style={{
               width:"100px",
@@ -258,7 +253,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
             </div>
           </div>
 
-          {/* Istatistikler */}
           <div style={{ display:"flex", gap:"8px", marginBottom:"20px" }}>
             <div style={{ flex:1, background:"#f3f4f6", padding:"12px", borderRadius:"12px", textAlign:"center" }}>
               <p style={{ margin:"0", fontSize:"20px", fontWeight:"800", color:"#4f46e5" }}>{istatistik.paylasim}</p>
@@ -274,7 +268,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
             </div>
           </div>
 
-          {/* Bilgiler */}
           <div style={{ background:"#f9fafb", borderRadius:"12px", padding:"16px", marginBottom:"20px" }}>
             {duzenliyor ? (
               <>
@@ -298,7 +291,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
             )}
           </div>
 
-          {/* Butonlar */}
           <div style={{ display:"flex", gap:"10px", marginBottom:"20px", flexWrap:"wrap" }}>
             {benimProfilim && (
               duzenliyor ? (
