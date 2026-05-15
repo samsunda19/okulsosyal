@@ -54,7 +54,7 @@ function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
   const [gonderiler, setGonderiler] = useState([]);
   const [yukleniyor, setYukleniyor] = useState(false);
-  const [kullaniciIsim, setKullaniciIsim] = useState("");
+  const [kullanici, setKullanici] = useState({ isim: "", arkadaslar: [], gelenIstekler: [], gidenIstekler: [], engellenenler: [], okul: "" });
   const [karanlikMod, setKaranlikMod] = useState(false);
   const [arkaplanId, setArkaplanId] = useState("varsayilan");
   const [secilenProfil, setSecilenProfil] = useState(null);
@@ -68,6 +68,7 @@ function StudentDashboard() {
   const [digerSebep, setDigerSebep] = useState("");
   const [aramaMetni, setAramaMetni] = useState("");
   const [tumOgrenciler, setTumOgrenciler] = useState([]);
+  const [aktifSekme, setAktifSekme] = useState("tumu");
 
   useEffect(() => {
     kullaniciBilgisiGetir();
@@ -81,7 +82,14 @@ function StudentDashboard() {
     const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
     if (userDoc.exists()) {
       const data = userDoc.data();
-      setKullaniciIsim(data.isim || auth.currentUser.email);
+      setKullanici({
+        isim: data.isim || auth.currentUser.email,
+        arkadaslar: data.arkadaslar || [],
+        gelenIstekler: data.gelenIstekler || [],
+        gidenIstekler: data.gidenIstekler || [],
+        engellenenler: data.engellenenler || [],
+        okul: data.okul || ""
+      });
       setKaranlikMod(data.karanlikMod || false);
       setArkaplanId(data.arkaplan || "varsayilan");
     }
@@ -131,7 +139,7 @@ function StudentDashboard() {
     }
     await addDoc(collection(db, "posts", postId, "comments"), {
       icerik: metin,
-      yazar: kullaniciIsim || auth.currentUser.email,
+      yazar: kullanici.isim || auth.currentUser.email,
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp()
     });
@@ -154,7 +162,7 @@ function StudentDashboard() {
     setYukleniyor(true);
     await addDoc(collection(db, "posts"), {
       icerik: gonderi,
-      yazar: kullaniciIsim || auth.currentUser.email,
+      yazar: kullanici.isim || auth.currentUser.email,
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp(),
       begenenler: []
@@ -205,7 +213,7 @@ function StudentDashboard() {
       yazarUid: bildirimModal.yazarUid,
       yazar: bildirimModal.yazar,
       bildirenUid: auth.currentUser.uid,
-      bildiren: kullaniciIsim || auth.currentUser.email,
+      bildiren: kullanici.isim || auth.currentUser.email,
       kategori: secilenKategori.baslik,
       kategoriId: secilenKategori.id,
       digerSebep: digerSebep,
@@ -219,14 +227,23 @@ function StudentDashboard() {
     alert("✅ Bildirimin alindi! Veli ve ogretmenlerin bilgilendirildi.");
   };
 
+  const normalize = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+
   const aramaSonuclari = aramaMetni.trim()
     ? tumOgrenciler.filter(k => {
         const arama = aramaMetni.toLowerCase();
-        return (k.isim || "").toLowerCase().includes(arama);
+        const isimEsl = (k.isim || "").toLowerCase().includes(arama);
+        const ayniOkul = kullanici.okul && k.okul && normalize(kullanici.okul) === normalize(k.okul);
+        const engellenmemis = !kullanici.engellenenler.includes(k.id);
+        return isimEsl && ayniOkul && engellenmemis;
       })
     : [];
 
-  // Arka plan secimi: ozel mi yoksa hazir bir tema mi
+  // Sadece arkadaslarin paylasimlari (kendininki olmasin)
+  const filtrelenmisGonderiler = aktifSekme === "arkadaslar"
+    ? gonderiler.filter(g => kullanici.arkadaslar.includes(g.yazarUid))
+    : gonderiler.filter(g => !kullanici.engellenenler.includes(g.yazarUid));
+
   let arkaplanStili = {};
   if (arkaplanId === "ozel") {
     const ozelKayit = localStorage.getItem("ozelArkaplan_" + auth.currentUser.uid);
@@ -269,7 +286,7 @@ function StudentDashboard() {
         {secilenProfil && (
           <ProfilSayfasi
             kullaniciId={secilenProfil}
-            onKapat={() => setSecilenProfil(null)}
+            onKapat={() => { setSecilenProfil(null); kullaniciBilgisiGetir(); gonderileriGetir(); }}
             mevcutKullaniciRol="student"
           />
         )}
@@ -381,7 +398,7 @@ function StudentDashboard() {
             <span
               onClick={() => setSecilenProfil(auth.currentUser.uid)}
               style={{ fontSize:"14px", color:"#4f46e5", cursor:"pointer", fontWeight:"600" }}>
-              👤 {kullaniciIsim}
+              👤 {kullanici.isim}
             </span>
             <button onClick={() => signOut(auth)}
               style={{ padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer" }}>
@@ -393,7 +410,7 @@ function StudentDashboard() {
         <div style={{ background: kartArkaplan, padding:"12px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"16px" }}>
           <input
             type="text"
-            placeholder="🔍 Arkadas ara..."
+            placeholder="🔍 Ayni okuldan arkadas ara..."
             value={aramaMetni}
             onChange={e => setAramaMetni(e.target.value)}
             style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"14px", boxSizing:"border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }}
@@ -406,14 +423,60 @@ function StudentDashboard() {
               {aramaSonuclari.slice(0, 8).map(k => (
                 <div key={k.id}
                   onClick={() => { setSecilenProfil(k.id); setAramaMetni(""); }}
-                  style={{ padding:"8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius:"8px", marginBottom:"4px", cursor:"pointer" }}>
-                  <p style={{ margin:"0", fontSize:"13px", fontWeight:"600", color: kartYazi }}>{k.isim || "Isimsiz"}</p>
-                  {k.sinif && <p style={{ margin:"0", fontSize:"11px", color: kartIkincilYazi }}>📚 {k.sinif}</p>}
+                  style={{ padding:"8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius:"8px", marginBottom:"4px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div>
+                    <p style={{ margin:"0", fontSize:"13px", fontWeight:"600", color: kartYazi }}>{k.isim || "Isimsiz"}</p>
+                    {k.sinif && <p style={{ margin:"0", fontSize:"11px", color: kartIkincilYazi }}>📚 {k.sinif}</p>}
+                  </div>
+                  {kullanici.arkadaslar.includes(k.id) && (
+                    <span style={{ background:"#d1fae5", color:"#065f46", padding:"2px 6px", borderRadius:"4px", fontSize:"10px" }}>Arkadas</span>
+                  )}
+                  {kullanici.gidenIstekler.includes(k.id) && (
+                    <span style={{ background:"#fef3c7", color:"#92400e", padding:"2px 6px", borderRadius:"4px", fontSize:"10px" }}>Istek gonderildi</span>
+                  )}
+                  {kullanici.gelenIstekler.includes(k.id) && (
+                    <span style={{ background:"#dbeafe", color:"#1e40af", padding:"2px 6px", borderRadius:"4px", fontSize:"10px" }}>Istegi var</span>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        <div style={{ display:"flex", gap:"8px", marginBottom:"16px" }}>
+          <button onClick={() => setAktifSekme("tumu")}
+            style={{ flex:1, padding:"10px", background: aktifSekme === "tumu" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "tumu" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px" }}>
+            🌍 Tumu
+          </button>
+          <button onClick={() => setAktifSekme("arkadaslar")}
+            style={{ flex:1, padding:"10px", background: aktifSekme === "arkadaslar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "arkadaslar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px", position:"relative" }}>
+            👥 Arkadaslar
+            {kullanici.gelenIstekler.length > 0 && (
+              <span style={{ position:"absolute", top:"-6px", right:"-6px", background:"#ef4444", color:"white", borderRadius:"50%", width:"22px", height:"22px", fontSize:"11px", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"700" }}>
+                {kullanici.gelenIstekler.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {aktifSekme === "arkadaslar" && kullanici.gelenIstekler.length > 0 && (
+          <div style={{ background: kartArkaplan, padding:"12px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"16px" }}>
+            <h3 style={{ fontSize:"14px", color: kartYazi, margin:"0 0 10px" }}>
+              📬 Bekleyen Istekler ({kullanici.gelenIstekler.length})
+            </h3>
+            {kullanici.gelenIstekler.map(uid => {
+              const istekciKisi = tumOgrenciler.find(o => o.id === uid);
+              if (!istekciKisi) return null;
+              return (
+                <div key={uid}
+                  onClick={() => setSecilenProfil(uid)}
+                  style={{ padding:"8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius:"8px", marginBottom:"4px", cursor:"pointer" }}>
+                  <p style={{ margin:"0", fontSize:"13px", fontWeight:"600", color: kartYazi }}>👋 {istekciKisi.isim} sana arkadaslik istegi gonderdi</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div style={{ background: kartArkaplan, padding:"20px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"24px" }}>
           <textarea
@@ -434,7 +497,12 @@ function StudentDashboard() {
         </div>
 
         <div>
-          {gonderiler.map(g => {
+          {filtrelenmisGonderiler.length === 0 && aktifSekme === "arkadaslar" && (
+            <div style={{ background: kartArkaplan, padding:"20px", borderRadius:"12px", textAlign:"center", color: kartIkincilYazi }}>
+              <p>Henuz arkadasin yok veya arkadaslarin paylasim yapmadi.</p>
+            </div>
+          )}
+          {filtrelenmisGonderiler.map(g => {
             const begenenler = g.begenenler || [];
             const benBegendimMi = begenenler.includes(auth.currentUser.uid);
             const benimPaylasimim = g.yazarUid === auth.currentUser.uid;
@@ -446,6 +514,7 @@ function StudentDashboard() {
                     onClick={() => setSecilenProfil(g.yazarUid)}
                     style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline" }}>
                     {g.yazar}
+                    {kullanici.arkadaslar.includes(g.yazarUid) && " 👥"}
                   </small>
                   <div style={{ display:"flex", gap:"6px" }}>
                     <button onClick={() => begeniToggle(g.id, begenenler)}
