@@ -3,6 +3,7 @@ import { db, auth } from "../firebase";
 import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
+import boslukResmi from "../background2.png";
 
 const KUFUR_LISTESI = [
   "amk", "aq", "amq", "amına", "amini", "amcık", "amcik", "anasını",
@@ -31,11 +32,31 @@ const BILDIRIM_KATEGORILERI = [
   { id: "diger", emoji: "😟", baslik: "Baska bir sebep", duygusal: true }
 ];
 
+const ARKAPLANLAR = {
+  varsayilan: { deger: "url(" + boslukResmi + ")", tip: "resim" },
+  gokkusagi: { deger: "linear-gradient(135deg, #ff6b9d, #feca57, #48dbfb, #1dd1a1)", tip: "gradient" },
+  uzay: { deger: "linear-gradient(135deg, #0f0c29, #302b63, #24243e)", tip: "gradient" },
+  okyanus: { deger: "linear-gradient(135deg, #2193b0, #6dd5ed)", tip: "gradient" },
+  gunbatimi: { deger: "linear-gradient(135deg, #fa709a, #fee140)", tip: "gradient" },
+  orman: { deger: "linear-gradient(135deg, #134e5e, #71b280)", tip: "gradient" },
+  pastel: { deger: "linear-gradient(135deg, #ffecd2, #fcb69f)", tip: "gradient" },
+  morpembe: { deger: "linear-gradient(135deg, #667eea, #764ba2)", tip: "gradient" },
+  neon: { deger: "linear-gradient(135deg, #00c9ff, #92fe9d)", tip: "gradient" },
+  atesli: { deger: "linear-gradient(135deg, #ff512f, #f09819)", tip: "gradient" },
+  lavanta: { deger: "linear-gradient(135deg, #c471f5, #fa71cd)", tip: "gradient" },
+  kiraz: { deger: "linear-gradient(135deg, #eb3349, #f45c43)", tip: "gradient" },
+  gece: { deger: "linear-gradient(135deg, #141e30, #243b55)", tip: "gradient" },
+  ananas: { deger: "linear-gradient(135deg, #f7971e, #ffd200)", tip: "gradient" },
+  buz: { deger: "linear-gradient(135deg, #74ebd5, #acb6e5)", tip: "gradient" }
+};
+
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
   const [gonderiler, setGonderiler] = useState([]);
   const [yukleniyor, setYukleniyor] = useState(false);
   const [kullaniciIsim, setKullaniciIsim] = useState("");
+  const [karanlikMod, setKaranlikMod] = useState(false);
+  const [arkaplanId, setArkaplanId] = useState("varsayilan");
   const [secilenProfil, setSecilenProfil] = useState(null);
   const [acikYorumlar, setAcikYorumlar] = useState({});
   const [yorumlar, setYorumlar] = useState({});
@@ -47,15 +68,21 @@ function StudentDashboard() {
   const [digerSebep, setDigerSebep] = useState("");
 
   useEffect(() => {
-    const isimGetir = async () => {
-      const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-      if (userDoc.exists()) {
-        setKullaniciIsim(userDoc.data().isim || auth.currentUser.email);
-      }
-    };
-    isimGetir();
+    kullaniciBilgisiGetir();
     gonderileriGetir();
+    const interval = setInterval(kullaniciBilgisiGetir, 2000);
+    return () => clearInterval(interval);
   }, []);
+
+  const kullaniciBilgisiGetir = async () => {
+    const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      setKullaniciIsim(data.isim || auth.currentUser.email);
+      setKaranlikMod(data.karanlikMod || false);
+      setArkaplanId(data.arkaplan || "varsayilan");
+    }
+  };
 
   const kufurKontrol = (metin) => {
     const kucukMetin = metin.toLowerCase();
@@ -181,237 +208,250 @@ function StudentDashboard() {
     alert("✅ Bildirimin alindi! Veli ve ogretmenlerin bilgilendirildi.");
   };
 
+  const aktifArkaplan = ARKAPLANLAR[arkaplanId] || ARKAPLANLAR.varsayilan;
+  const kartArkaplan = karanlikMod ? "#1f2937" : "white";
+  const kartYazi = karanlikMod ? "#f3f4f6" : "#111827";
+  const kartIkincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
+
   return (
-    <div style={{ maxWidth:"600px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
+    <div style={{
+      minHeight:"100vh",
+      backgroundImage: aktifArkaplan.deger,
+      backgroundSize: aktifArkaplan.tip === "resim" ? "cover" : "auto",
+      backgroundPosition:"center",
+      backgroundAttachment:"fixed",
+      backgroundRepeat:"no-repeat"
+    }}>
+      <div style={{ maxWidth:"600px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
 
-      {secilenProfil && (
-        <ProfilSayfasi
-          kullaniciId={secilenProfil}
-          onKapat={() => setSecilenProfil(null)}
-          mevcutKullaniciRol="student"
-        />
-      )}
-
-      {/* Bildirim Modalı */}
-      {bildirimModal && (
-        <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.6)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:1000 }}>
-          <div style={{ background:"white", borderRadius:"16px", padding:"24px", width:"90%", maxWidth:"400px", maxHeight:"85vh", overflowY:"auto" }}>
-            
-            {bildirimAdimi === 1 && (
-              <>
-                <h3 style={{ marginBottom:"8px" }}>🚩 Bildirme Sebebi</h3>
-                <p style={{ fontSize:"13px", color:"#6b7280", marginBottom:"16px" }}>
-                  Bu icerigi neden bildiriyorsun?
-                </p>
-                {BILDIRIM_KATEGORILERI.map(k => (
-                  <button key={k.id}
-                    onClick={() => {
-                      setSecilenKategori(k);
-                      if (k.duygusal) {
-                        setBildirimAdimi(2);
-                      } else {
-                        bildirimGonder(null);
-                      }
-                    }}
-                    style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", display:"flex", alignItems:"center", gap:"10px" }}>
-                    <span style={{ fontSize:"18px" }}>{k.emoji}</span>
-                    <span>{k.baslik}</span>
-                  </button>
-                ))}
-                <button onClick={() => setBildirimModal(null)}
-                  style={{ width:"100%", padding:"10px", background:"#e5e7eb", border:"none", borderRadius:"8px", cursor:"pointer", marginTop:"8px" }}>
-                  Iptal
-                </button>
-              </>
-            )}
-
-            {bildirimAdimi === 2 && secilenKategori?.id === "diger" && (
-              <>
-                <h3 style={{ marginBottom:"12px" }}>😟 Baska sebep</h3>
-                <textarea
-                  value={digerSebep}
-                  onChange={e => setDigerSebep(e.target.value)}
-                  placeholder="Sebebini yazabilirsin..."
-                  style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", minHeight:"80px", boxSizing:"border-box", marginBottom:"12px", fontFamily:"inherit" }}
-                />
-                <button onClick={() => setBildirimAdimi(3)}
-                  style={{ width:"100%", padding:"10px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", marginBottom:"8px" }}>
-                  Devam Et
-                </button>
-                <button onClick={() => setBildirimModal(null)}
-                  style={{ width:"100%", padding:"10px", background:"#e5e7eb", border:"none", borderRadius:"8px", cursor:"pointer" }}>
-                  Iptal
-                </button>
-              </>
-            )}
-
-            {bildirimAdimi === 2 && secilenKategori?.id !== "diger" && (
-              <>
-                <h3 style={{ marginBottom:"8px" }}>💙 Sen iyi misin?</h3>
-                <p style={{ fontSize:"13px", color:"#6b7280", marginBottom:"16px" }}>
-                  Bunu okumak seni nasil etkiledi?
-                </p>
-                <button onClick={() => bildirimGonder("iyi")}
-                  style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#d1fae5", color:"#065f46", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
-                  😊 Iyiyim, sadece bildirmek istedim
-                </button>
-                <button onClick={() => bildirimGonder("uzgun")}
-                  style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
-                  😟 Biraz uzuldum
-                </button>
-                <button onClick={() => bildirimGonder("yardim")}
-                  style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fee2e2", color:"#991b1b", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
-                  😢 Cok uzuldum, yardim istiyorum
-                </button>
-                <button onClick={() => setBildirimModal(null)}
-                  style={{ width:"100%", padding:"10px", background:"#e5e7eb", border:"none", borderRadius:"8px", cursor:"pointer", marginTop:"8px" }}>
-                  Iptal
-                </button>
-              </>
-            )}
-
-            {bildirimAdimi === 3 && (
-              <>
-                <h3 style={{ marginBottom:"8px" }}>💙 Sen iyi misin?</h3>
-                <p style={{ fontSize:"13px", color:"#6b7280", marginBottom:"16px" }}>
-                  Bunu okumak seni nasil etkiledi?
-                </p>
-                <button onClick={() => bildirimGonder("iyi")}
-                  style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#d1fae5", color:"#065f46", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
-                  😊 Iyiyim, sadece bildirmek istedim
-                </button>
-                <button onClick={() => bildirimGonder("uzgun")}
-                  style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
-                  😟 Biraz uzuldum
-                </button>
-                <button onClick={() => bildirimGonder("yardim")}
-                  style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fee2e2", color:"#991b1b", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
-                  😢 Cok uzuldum, yardim istiyorum
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"24px" }}>
-        <h2 style={{ color:"#4f46e5" }}>Ogrenci Paneli</h2>
-        <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-          <span
-            onClick={() => setSecilenProfil(auth.currentUser.uid)}
-            style={{ fontSize:"14px", color:"#4f46e5", cursor:"pointer", fontWeight:"600" }}>
-            👤 {kullaniciIsim}
-          </span>
-          <button onClick={() => signOut(auth)}
-            style={{ padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer" }}>
-            Cikis
-          </button>
-        </div>
-      </div>
-
-      <div style={{ background:"white", padding:"20px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"24px" }}>
-        <textarea
-          placeholder="Ne dusunuyorsun?"
-          value={gonderi}
-          onChange={e => setGonderi(e.target.value)}
-          style={{ width:"100%", padding:"12px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"15px", resize:"vertical", minHeight:"80px", boxSizing:"border-box" }}
-        />
-        {hataMesaj && (
-          <div style={{ marginTop:"8px", padding:"8px 12px", background:"#fee2e2", color:"#ef4444", borderRadius:"8px", fontSize:"13px" }}>
-            {hataMesaj}
-          </div>
+        {secilenProfil && (
+          <ProfilSayfasi
+            kullaniciId={secilenProfil}
+            onKapat={() => setSecilenProfil(null)}
+            mevcutKullaniciRol="student"
+          />
         )}
-        <button onClick={gonderiYap} disabled={yukleniyor}
-          style={{ marginTop:"10px", padding:"10px 24px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"15px" }}>
-          {yukleniyor ? "Paylasiliyor..." : "Paylas"}
-        </button>
-      </div>
 
-      <div>
-        {gonderiler.map(g => {
-          const begenenler = g.begenenler || [];
-          const benBegendimMi = begenenler.includes(auth.currentUser.uid);
-          const benimPaylasimim = g.yazarUid === auth.currentUser.uid;
-          return (
-            <div key={g.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px" }}>
-              <p style={{ margin:"0 0 8px 0", fontSize:"15px" }}>{g.icerik}</p>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
-                <small
-                  onClick={() => setSecilenProfil(g.yazarUid)}
-                  style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline" }}>
-                  {g.yazar}
-                </small>
-                <div style={{ display:"flex", gap:"6px" }}>
-                  <button onClick={() => begeniToggle(g.id, begenenler)}
-                    style={{ padding:"4px 10px", background: benBegendimMi ? "#fee2e2" : "#f3f4f6", color: benBegendimMi ? "#ef4444" : "#6b7280", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
-                    {benBegendimMi ? "❤️" : "🤍"} {begenenler.length}
-                  </button>
-                  <button onClick={() => yorumToggle(g.id)}
-                    style={{ padding:"4px 10px", background:"#e0e7ff", color:"#4f46e5", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
-                    💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
-                  </button>
-                  {!benimPaylasimim && (
-                    <button onClick={() => bildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
-                      style={{ padding:"4px 10px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
-                      🚩
-                    </button>
-                  )}
-                  {benimPaylasimim && (
-                    <button onClick={() => gonderiSil(g.id, g.yazarUid)}
-                      style={{ padding:"4px 10px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
-                      Sil
-                    </button>
-                  )}
-                </div>
-              </div>
+        {bildirimModal && (
+          <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.6)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:1000 }}>
+            <div style={{ background:"white", borderRadius:"16px", padding:"24px", width:"90%", maxWidth:"400px", maxHeight:"85vh", overflowY:"auto" }}>
 
-              {acikYorumlar[g.id] && (
-                <div style={{ marginTop:"12px", paddingTop:"12px", borderTop:"1px solid #f0f4ff" }}>
-                  {yorumlar[g.id] && yorumlar[g.id].map(y => {
-                    const benimYorumum = y.yazarUid === auth.currentUser.uid;
-                    return (
-                      <div key={y.id} style={{ background:"#f9fafb", padding:"10px", borderRadius:"8px", marginBottom:"6px", position:"relative" }}>
-                        <p style={{ margin:"0 0 4px", fontSize:"14px", paddingRight:"60px" }}>{y.icerik}</p>
-                        <small
-                          onClick={() => setSecilenProfil(y.yazarUid)}
-                          style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline", fontSize:"12px" }}>
-                          {y.yazar}
-                        </small>
-                        <div style={{ position:"absolute", top:"8px", right:"8px", display:"flex", gap:"4px" }}>
-                          {!benimYorumum && (
-                            <button onClick={() => bildirimBaslat("comment", y.id, g.id, y.icerik, y.yazarUid, y.yazar)}
-                              style={{ padding:"2px 8px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"5px", cursor:"pointer", fontSize:"11px" }}>
-                              🚩
-                            </button>
-                          )}
-                          {benimYorumum && (
-                            <button onClick={() => yorumSil(g.id, y.id)}
-                              style={{ padding:"2px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"5px", cursor:"pointer", fontSize:"11px" }}>
-                              Sil
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div style={{ display:"flex", gap:"8px", marginTop:"8px" }}>
-                    <input
-                      type="text"
-                      placeholder="Yorum yaz..."
-                      value={yeniYorum[g.id] || ""}
-                      onChange={e => setYeniYorum(prev => ({ ...prev, [g.id]: e.target.value }))}
-                      onKeyDown={e => e.key === "Enter" && yorumYap(g.id)}
-                      style={{ flex:1, padding:"8px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"13px" }} />
-                    <button onClick={() => yorumYap(g.id)}
-                      style={{ padding:"8px 14px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"13px" }}>
-                      Gonder
+              {bildirimAdimi === 1 && (
+                <>
+                  <h3 style={{ marginBottom:"8px" }}>🚩 Bildirme Sebebi</h3>
+                  <p style={{ fontSize:"13px", color:"#6b7280", marginBottom:"16px" }}>
+                    Bu icerigi neden bildiriyorsun?
+                  </p>
+                  {BILDIRIM_KATEGORILERI.map(k => (
+                    <button key={k.id}
+                      onClick={() => {
+                        setSecilenKategori(k);
+                        if (k.duygusal) {
+                          setBildirimAdimi(2);
+                        } else {
+                          bildirimGonder(null);
+                        }
+                      }}
+                      style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", display:"flex", alignItems:"center", gap:"10px" }}>
+                      <span style={{ fontSize:"18px" }}>{k.emoji}</span>
+                      <span>{k.baslik}</span>
                     </button>
-                  </div>
-                </div>
+                  ))}
+                  <button onClick={() => setBildirimModal(null)}
+                    style={{ width:"100%", padding:"10px", background:"#e5e7eb", border:"none", borderRadius:"8px", cursor:"pointer", marginTop:"8px" }}>
+                    Iptal
+                  </button>
+                </>
+              )}
+
+              {bildirimAdimi === 2 && secilenKategori?.id === "diger" && (
+                <>
+                  <h3 style={{ marginBottom:"12px" }}>😟 Baska sebep</h3>
+                  <textarea
+                    value={digerSebep}
+                    onChange={e => setDigerSebep(e.target.value)}
+                    placeholder="Sebebini yazabilirsin..."
+                    style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", minHeight:"80px", boxSizing:"border-box", marginBottom:"12px", fontFamily:"inherit" }}
+                  />
+                  <button onClick={() => setBildirimAdimi(3)}
+                    style={{ width:"100%", padding:"10px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", marginBottom:"8px" }}>
+                    Devam Et
+                  </button>
+                  <button onClick={() => setBildirimModal(null)}
+                    style={{ width:"100%", padding:"10px", background:"#e5e7eb", border:"none", borderRadius:"8px", cursor:"pointer" }}>
+                    Iptal
+                  </button>
+                </>
+              )}
+
+              {bildirimAdimi === 2 && secilenKategori?.id !== "diger" && (
+                <>
+                  <h3 style={{ marginBottom:"8px" }}>💙 Sen iyi misin?</h3>
+                  <p style={{ fontSize:"13px", color:"#6b7280", marginBottom:"16px" }}>
+                    Bunu okumak seni nasil etkiledi?
+                  </p>
+                  <button onClick={() => bildirimGonder("iyi")}
+                    style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#d1fae5", color:"#065f46", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
+                    😊 Iyiyim, sadece bildirmek istedim
+                  </button>
+                  <button onClick={() => bildirimGonder("uzgun")}
+                    style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
+                    😟 Biraz uzuldum
+                  </button>
+                  <button onClick={() => bildirimGonder("yardim")}
+                    style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fee2e2", color:"#991b1b", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
+                    😢 Cok uzuldum, yardim istiyorum
+                  </button>
+                  <button onClick={() => setBildirimModal(null)}
+                    style={{ width:"100%", padding:"10px", background:"#e5e7eb", border:"none", borderRadius:"8px", cursor:"pointer", marginTop:"8px" }}>
+                    Iptal
+                  </button>
+                </>
+              )}
+
+              {bildirimAdimi === 3 && (
+                <>
+                  <h3 style={{ marginBottom:"8px" }}>💙 Sen iyi misin?</h3>
+                  <p style={{ fontSize:"13px", color:"#6b7280", marginBottom:"16px" }}>
+                    Bunu okumak seni nasil etkiledi?
+                  </p>
+                  <button onClick={() => bildirimGonder("iyi")}
+                    style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#d1fae5", color:"#065f46", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
+                    😊 Iyiyim, sadece bildirmek istedim
+                  </button>
+                  <button onClick={() => bildirimGonder("uzgun")}
+                    style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
+                    😟 Biraz uzuldum
+                  </button>
+                  <button onClick={() => bildirimGonder("yardim")}
+                    style={{ width:"100%", padding:"12px", marginBottom:"8px", background:"#fee2e2", color:"#991b1b", border:"none", borderRadius:"10px", cursor:"pointer", textAlign:"left", fontSize:"14px", fontWeight:"600" }}>
+                    😢 Cok uzuldum, yardim istiyorum
+                  </button>
+                </>
               )}
             </div>
-          );
-        })}
+          </div>
+        )}
+
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"24px", background: karanlikMod ? "rgba(31,41,55,0.9)" : "rgba(255,255,255,0.9)", padding:"12px 16px", borderRadius:"12px" }}>
+          <h2 style={{ color:"#4f46e5", margin:0 }}>Ogrenci Paneli</h2>
+          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+            <span
+              onClick={() => setSecilenProfil(auth.currentUser.uid)}
+              style={{ fontSize:"14px", color:"#4f46e5", cursor:"pointer", fontWeight:"600" }}>
+              👤 {kullaniciIsim}
+            </span>
+            <button onClick={() => signOut(auth)}
+              style={{ padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer" }}>
+              Cikis
+            </button>
+          </div>
+        </div>
+
+        <div style={{ background: kartArkaplan, padding:"20px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"24px" }}>
+          <textarea
+            placeholder="Ne dusunuyorsun?"
+            value={gonderi}
+            onChange={e => setGonderi(e.target.value)}
+            style={{ width:"100%", padding:"12px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"15px", resize:"vertical", minHeight:"80px", boxSizing:"border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }}
+          />
+          {hataMesaj && (
+            <div style={{ marginTop:"8px", padding:"8px 12px", background:"#fee2e2", color:"#ef4444", borderRadius:"8px", fontSize:"13px" }}>
+              {hataMesaj}
+            </div>
+          )}
+          <button onClick={gonderiYap} disabled={yukleniyor}
+            style={{ marginTop:"10px", padding:"10px 24px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"15px" }}>
+            {yukleniyor ? "Paylasiliyor..." : "Paylas"}
+          </button>
+        </div>
+
+        <div>
+          {gonderiler.map(g => {
+            const begenenler = g.begenenler || [];
+            const benBegendimMi = begenenler.includes(auth.currentUser.uid);
+            const benimPaylasimim = g.yazarUid === auth.currentUser.uid;
+            return (
+              <div key={g.id} style={{ background: kartArkaplan, padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px" }}>
+                <p style={{ margin:"0 0 8px 0", fontSize:"15px", color: kartYazi }}>{g.icerik}</p>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
+                  <small
+                    onClick={() => setSecilenProfil(g.yazarUid)}
+                    style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline" }}>
+                    {g.yazar}
+                  </small>
+                  <div style={{ display:"flex", gap:"6px" }}>
+                    <button onClick={() => begeniToggle(g.id, begenenler)}
+                      style={{ padding:"4px 10px", background: benBegendimMi ? "#fee2e2" : (karanlikMod ? "#374151" : "#f3f4f6"), color: benBegendimMi ? "#ef4444" : kartIkincilYazi, border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
+                      {benBegendimMi ? "❤️" : "🤍"} {begenenler.length}
+                    </button>
+                    <button onClick={() => yorumToggle(g.id)}
+                      style={{ padding:"4px 10px", background:"#e0e7ff", color:"#4f46e5", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
+                      💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
+                    </button>
+                    {!benimPaylasimim && (
+                      <button onClick={() => bildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
+                        style={{ padding:"4px 10px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
+                        🚩
+                      </button>
+                    )}
+                    {benimPaylasimim && (
+                      <button onClick={() => gonderiSil(g.id, g.yazarUid)}
+                        style={{ padding:"4px 10px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
+                        Sil
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {acikYorumlar[g.id] && (
+                  <div style={{ marginTop:"12px", paddingTop:"12px", borderTop: karanlikMod ? "1px solid #374151" : "1px solid #f0f4ff" }}>
+                    {yorumlar[g.id] && yorumlar[g.id].map(y => {
+                      const benimYorumum = y.yazarUid === auth.currentUser.uid;
+                      return (
+                        <div key={y.id} style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding:"10px", borderRadius:"8px", marginBottom:"6px", position:"relative" }}>
+                          <p style={{ margin:"0 0 4px", fontSize:"14px", paddingRight:"60px", color: kartYazi }}>{y.icerik}</p>
+                          <small
+                            onClick={() => setSecilenProfil(y.yazarUid)}
+                            style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline", fontSize:"12px" }}>
+                            {y.yazar}
+                          </small>
+                          <div style={{ position:"absolute", top:"8px", right:"8px", display:"flex", gap:"4px" }}>
+                            {!benimYorumum && (
+                              <button onClick={() => bildirimBaslat("comment", y.id, g.id, y.icerik, y.yazarUid, y.yazar)}
+                                style={{ padding:"2px 8px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"5px", cursor:"pointer", fontSize:"11px" }}>
+                                🚩
+                              </button>
+                            )}
+                            {benimYorumum && (
+                              <button onClick={() => yorumSil(g.id, y.id)}
+                                style={{ padding:"2px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"5px", cursor:"pointer", fontSize:"11px" }}>
+                                Sil
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ display:"flex", gap:"8px", marginTop:"8px" }}>
+                      <input
+                        type="text"
+                        placeholder="Yorum yaz..."
+                        value={yeniYorum[g.id] || ""}
+                        onChange={e => setYeniYorum(prev => ({ ...prev, [g.id]: e.target.value }))}
+                        onKeyDown={e => e.key === "Enter" && yorumYap(g.id)}
+                        style={{ flex:1, padding:"8px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"13px", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
+                      <button onClick={() => yorumYap(g.id)}
+                        style={{ padding:"8px 14px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"13px" }}>
+                        Gonder
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ function AdminDashboard() {
   const [acikYorumlar, setAcikYorumlar] = useState({});
   const [yorumlar, setYorumlar] = useState({});
   const [aktifSekme, setAktifSekme] = useState("etkilesimler");
+  const [aramaMetni, setAramaMetni] = useState("");
 
   useEffect(() => {
     verileriGetir();
@@ -103,6 +104,14 @@ function AdminDashboard() {
     alert("Kayit reddedildi!");
   };
 
+  const aramaSonuclari = aramaMetni.trim()
+    ? Object.values(kullaniciler).filter(k => {
+        const arama = aramaMetni.toLowerCase();
+        return (k.isim || "").toLowerCase().includes(arama) ||
+               (k.email || "").toLowerCase().includes(arama);
+      })
+    : [];
+
   const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.okundu).length;
   const yeniBildirimSayisi = bildirimler.filter(b => !b.okundu).length;
   const bekleyenSayisi = bekleyenler.length;
@@ -124,6 +133,48 @@ function AdminDashboard() {
           style={{ padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer" }}>
           Cikis
         </button>
+      </div>
+
+      <div style={{ background:"white", padding:"12px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"16px" }}>
+        <input
+          type="text"
+          placeholder="🔍 Kullanici ara (isim veya email)..."
+          value={aramaMetni}
+          onChange={e => setAramaMetni(e.target.value)}
+          style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"14px", boxSizing:"border-box" }}
+        />
+        {aramaMetni.trim() && (
+          <div style={{ marginTop:"10px" }}>
+            <p style={{ fontSize:"12px", color:"#6b7280", margin:"0 0 8px" }}>
+              {aramaSonuclari.length} sonuc bulundu
+            </p>
+            {aramaSonuclari.slice(0, 10).map(k => (
+              <div key={k.id}
+                onClick={() => { setSecilenProfil(k.id); setAramaMetni(""); }}
+                style={{ padding:"8px 10px", background:"#f9fafb", borderRadius:"8px", marginBottom:"4px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div>
+                  <p style={{ margin:"0", fontSize:"13px", fontWeight:"600" }}>{k.isim || "Isimsiz"}</p>
+                  <p style={{ margin:"0", fontSize:"11px", color:"#6b7280" }}>{k.email}</p>
+                </div>
+                <div style={{ display:"flex", gap:"4px" }}>
+                  <span style={{ padding:"2px 6px", background:"#e0e7ff", color:"#4f46e5", borderRadius:"4px", fontSize:"10px" }}>
+                    {k.role}
+                  </span>
+                  {k.dondurulmus && (
+                    <span style={{ padding:"2px 6px", background:"#fee2e2", color:"#ef4444", borderRadius:"4px", fontSize:"10px" }}>
+                      🔒
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+            {aramaSonuclari.length > 10 && (
+              <p style={{ fontSize:"11px", color:"#9ca3af", textAlign:"center", margin:"8px 0 0" }}>
+                ve {aramaSonuclari.length - 10} sonuc daha...
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ display:"flex", gap:"6px", marginBottom:"20px", flexWrap:"wrap" }}>
