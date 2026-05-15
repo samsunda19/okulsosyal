@@ -66,10 +66,13 @@ function StudentDashboard() {
   const [bildirimAdimi, setBildirimAdimi] = useState(1);
   const [secilenKategori, setSecilenKategori] = useState(null);
   const [digerSebep, setDigerSebep] = useState("");
+  const [aramaMetni, setAramaMetni] = useState("");
+  const [tumOgrenciler, setTumOgrenciler] = useState([]);
 
   useEffect(() => {
     kullaniciBilgisiGetir();
     gonderileriGetir();
+    ogrencileriGetir();
     const interval = setInterval(kullaniciBilgisiGetir, 2000);
     return () => clearInterval(interval);
   }, []);
@@ -82,6 +85,14 @@ function StudentDashboard() {
       setKaranlikMod(data.karanlikMod || false);
       setArkaplanId(data.arkaplan || "varsayilan");
     }
+  };
+
+  const ogrencileriGetir = async () => {
+    const snapshot = await getDocs(collection(db, "users"));
+    const ogrenciler = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.role === "student" && u.onaylandi !== false && u.id !== auth.currentUser.uid);
+    setTumOgrenciler(ogrenciler);
   };
 
   const kufurKontrol = (metin) => {
@@ -207,6 +218,13 @@ function StudentDashboard() {
     setBildirimModal(null);
     alert("✅ Bildirimin alindi! Veli ve ogretmenlerin bilgilendirildi.");
   };
+
+  const aramaSonuclari = aramaMetni.trim()
+    ? tumOgrenciler.filter(k => {
+        const arama = aramaMetni.toLowerCase();
+        return (k.isim || "").toLowerCase().includes(arama);
+      })
+    : [];
 
   const aktifArkaplan = ARKAPLANLAR[arkaplanId] || ARKAPLANLAR.varsayilan;
   const kartArkaplan = karanlikMod ? "#1f2937" : "white";
@@ -346,6 +364,31 @@ function StudentDashboard() {
               Cikis
             </button>
           </div>
+        </div>
+
+        <div style={{ background: kartArkaplan, padding:"12px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"16px" }}>
+          <input
+            type="text"
+            placeholder="🔍 Arkadas ara..."
+            value={aramaMetni}
+            onChange={e => setAramaMetni(e.target.value)}
+            style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"14px", boxSizing:"border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }}
+          />
+          {aramaMetni.trim() && (
+            <div style={{ marginTop:"10px" }}>
+              <p style={{ fontSize:"12px", color: kartIkincilYazi, margin:"0 0 8px" }}>
+                {aramaSonuclari.length} sonuc bulundu
+              </p>
+              {aramaSonuclari.slice(0, 8).map(k => (
+                <div key={k.id}
+                  onClick={() => { setSecilenProfil(k.id); setAramaMetni(""); }}
+                  style={{ padding:"8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius:"8px", marginBottom:"4px", cursor:"pointer" }}>
+                  <p style={{ margin:"0", fontSize:"13px", fontWeight:"600", color: kartYazi }}>{k.isim || "Isimsiz"}</p>
+                  {k.sinif && <p style={{ margin:"0", fontSize:"11px", color: kartIkincilYazi }}>📚 {k.sinif}</p>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div style={{ background: kartArkaplan, padding:"20px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"24px" }}>

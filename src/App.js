@@ -1,7 +1,7 @@
 import './App.css';
 import { AuthProvider, useAuth } from "./AuthContext";
 import { useState } from "react";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, deleteUser } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { doc, setDoc } from "firebase/firestore";
 import StudentDashboard from "./pages/StudentDashboard";
@@ -13,14 +13,18 @@ function LoginForm({ tip, onKapat }) {
   const [email, setEmail] = useState("");
   const [sifre, setSifre] = useState("");
   const [hata, setHata] = useState("");
+  const [yukleniyor, setYukleniyor] = useState(false);
 
   const handleGiris = async (e) => {
     e.preventDefault();
+    if (yukleniyor) return;
     setHata("");
+    setYukleniyor(true);
     try {
       await signInWithEmailAndPassword(auth, email, sifre);
     } catch (err) {
       setHata("E-posta veya sifre hatali!");
+      setYukleniyor(false);
     }
   };
 
@@ -39,9 +43,9 @@ function LoginForm({ tip, onKapat }) {
             style={{ width:"100%", padding:"10px", marginBottom:"12px", borderRadius:"8px", border:"1px solid #ddd", boxSizing:"border-box" }} />
           <input type="password" placeholder="Sifre" value={sifre} onChange={e => setSifre(e.target.value)}
             style={{ width:"100%", padding:"10px", marginBottom:"16px", borderRadius:"8px", border:"1px solid #ddd", boxSizing:"border-box" }} />
-          <button type="submit"
-            style={{ width:"100%", padding:"12px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"16px", marginBottom:"10px" }}>
-            Giris Yap
+          <button type="submit" disabled={yukleniyor}
+            style={{ width:"100%", padding:"12px", background: yukleniyor ? "#9ca3af" : "#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor: yukleniyor ? "not-allowed" : "pointer", fontSize:"16px", marginBottom:"10px" }}>
+            {yukleniyor ? "Giris yapiliyor..." : "Giris Yap"}
           </button>
           <button type="button" onClick={onKapat}
             style={{ width:"100%", padding:"10px", background:"#eee", border:"none", borderRadius:"8px", cursor:"pointer" }}>
@@ -61,15 +65,9 @@ function KayitForm({ onKapat }) {
   const [yukleniyor, setYukleniyor] = useState(false);
   const [basarili, setBasarili] = useState(false);
 
-  const handleKayit = async (e) => {
-    e.preventDefault();
-    setHata("");
-    if (!isim.trim()) { setHata("Isim giriniz!"); return; }
-    if (sifre.length < 6) { setHata("Sifre en az 6 karakter olmali!"); return; }
-    setYukleniyor(true);
+  const firestoreYaz = async (uid, deneme = 1) => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, sifre);
-      await setDoc(doc(db, "users", userCredential.user.uid), {
+      await setDoc(doc(db, "users", uid), {
         email: email,
         isim: isim,
         role: "student",
@@ -77,13 +75,54 @@ function KayitForm({ onKapat }) {
         dondurulmaBitis: null,
         onaylandi: false
       });
+      return true;
+    } catch (err) {
+      console.error("Firestore yazma hatasi (deneme " + deneme + "):", err);
+      if (deneme < 3) {
+        await new Promise(r => setTimeout(r, 1000));
+        return firestoreYaz(uid, deneme + 1);
+      }
+      return false;
+    }
+  };
+
+  const handleKayit = async (e) => {
+    e.preventDefault();
+    if (yukleniyor) return;
+    setHata("");
+    if (!isim.trim()) { setHata("Isim giriniz!"); return; }
+    if (sifre.length < 6) { setHata("Sifre en az 6 karakter olmali!"); return; }
+    setYukleniyor(true);
+
+    let userCredential = null;
+    try {
+      userCredential = await createUserWithEmailAndPassword(auth, email, sifre);
+      
+      const yazildi = await firestoreYaz(userCredential.user.uid);
+      
+      if (!yazildi) {
+        try {
+          await deleteUser(userCredential.user);
+        } catch (e) {
+          console.error("Auth silme hatasi:", e);
+        }
+        setHata("Kayit basarisiz! Lutfen tekrar deneyin.");
+        setYukleniyor(false);
+        return;
+      }
+
       await signOut(auth);
       setBasarili(true);
     } catch (err) {
+      console.error("Kayit hatasi:", err);
       if (err.code === "auth/email-already-in-use") {
         setHata("Bu e-posta zaten kayitli!");
+      } else if (err.code === "auth/invalid-email") {
+        setHata("Gecersiz e-posta!");
+      } else if (err.code === "auth/weak-password") {
+        setHata("Sifre cok zayif!");
       } else {
-        setHata("Kayit sirasinda hata olustu!");
+        setHata("Kayit sirasinda hata: " + (err.message || "Bilinmeyen hata"));
       }
       setYukleniyor(false);
     }
@@ -111,7 +150,7 @@ function KayitForm({ onKapat }) {
     <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
       <div style={{ background:"white", padding:"40px", borderRadius:"16px", width:"320px" }}>
         <h3 style={{ textAlign:"center", marginBottom:"20px" }}>Kayit Ol</h3>
-        {hata && <p style={{ color:"red", textAlign:"center", marginBottom:"12px" }}>{hata}</p>}
+        {hata && <p style={{ color:"red", textAlign:"center", marginBottom:"12px", fontSize:"13px" }}>{hata}</p>}
         <form onSubmit={handleKayit}>
           <input type="text" placeholder="Adiniz Soyadiniz" value={isim} onChange={e => setIsim(e.target.value)}
             style={{ width:"100%", padding:"10px", marginBottom:"12px", borderRadius:"8px", border:"1px solid #ddd", boxSizing:"border-box" }} />
@@ -120,7 +159,7 @@ function KayitForm({ onKapat }) {
           <input type="password" placeholder="Sifre (en az 6 karakter)" value={sifre} onChange={e => setSifre(e.target.value)}
             style={{ width:"100%", padding:"10px", marginBottom:"16px", borderRadius:"8px", border:"1px solid #ddd", boxSizing:"border-box" }} />
           <button type="submit" disabled={yukleniyor}
-            style={{ width:"100%", padding:"12px", background:"#10b981", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"16px", marginBottom:"10px" }}>
+            style={{ width:"100%", padding:"12px", background: yukleniyor ? "#9ca3af" : "#10b981", color:"white", border:"none", borderRadius:"8px", cursor: yukleniyor ? "not-allowed" : "pointer", fontSize:"16px", marginBottom:"10px" }}>
             {yukleniyor ? "Kaydediliyor..." : "Kayit Ol"}
           </button>
           <button type="button" onClick={onKapat}
