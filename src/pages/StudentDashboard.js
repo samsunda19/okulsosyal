@@ -226,20 +226,44 @@ function StudentDashboard() {
       })
     : [];
 
-  const aktifArkaplan = ARKAPLANLAR[arkaplanId] || ARKAPLANLAR.varsayilan;
+  // Arka plan secimi: ozel mi yoksa hazir bir tema mi
+  let arkaplanStili = {};
+  if (arkaplanId === "ozel") {
+    const ozelKayit = localStorage.getItem("ozelArkaplan_" + auth.currentUser.uid);
+    if (ozelKayit) {
+      arkaplanStili = {
+        backgroundImage: "url(" + ozelKayit + ")",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundAttachment: "fixed",
+        backgroundRepeat: "no-repeat"
+      };
+    } else {
+      arkaplanStili = {
+        backgroundImage: ARKAPLANLAR.varsayilan.deger,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundAttachment: "fixed",
+        backgroundRepeat: "no-repeat"
+      };
+    }
+  } else {
+    const aktifArkaplan = ARKAPLANLAR[arkaplanId] || ARKAPLANLAR.varsayilan;
+    arkaplanStili = {
+      backgroundImage: aktifArkaplan.deger,
+      backgroundSize: aktifArkaplan.tip === "resim" ? "cover" : "auto",
+      backgroundPosition: "center",
+      backgroundAttachment: "fixed",
+      backgroundRepeat: "no-repeat"
+    };
+  }
+
   const kartArkaplan = karanlikMod ? "#1f2937" : "white";
   const kartYazi = karanlikMod ? "#f3f4f6" : "#111827";
   const kartIkincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
 
   return (
-    <div style={{
-      minHeight:"100vh",
-      backgroundImage: aktifArkaplan.deger,
-      backgroundSize: aktifArkaplan.tip === "resim" ? "cover" : "auto",
-      backgroundPosition:"center",
-      backgroundAttachment:"fixed",
-      backgroundRepeat:"no-repeat"
-    }}>
+    <div style={{ minHeight:"100vh", ...arkaplanStili }}>
       <div style={{ maxWidth:"600px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
 
         {secilenProfil && (
