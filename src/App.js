@@ -1,9 +1,9 @@
 import './App.css';
 import { AuthProvider, useAuth } from "./AuthContext";
 import { useState } from "react";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 import StudentDashboard from "./pages/StudentDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
@@ -59,6 +59,7 @@ function KayitForm({ onKapat }) {
   const [sifre, setSifre] = useState("");
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
+  const [basarili, setBasarili] = useState(false);
 
   const handleKayit = async (e) => {
     e.preventDefault();
@@ -73,8 +74,11 @@ function KayitForm({ onKapat }) {
         isim: isim,
         role: "student",
         dondurulmus: false,
-        dondurulmaBitis: null
+        dondurulmaBitis: null,
+        onaylandi: false
       });
+      await signOut(auth);
+      setBasarili(true);
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {
         setHata("Bu e-posta zaten kayitli!");
@@ -84,6 +88,24 @@ function KayitForm({ onKapat }) {
       setYukleniyor(false);
     }
   };
+
+  if (basarili) {
+    return (
+      <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
+        <div style={{ background:"white", padding:"40px", borderRadius:"16px", width:"320px", textAlign:"center" }}>
+          <div style={{ fontSize:"50px", marginBottom:"12px" }}>✅</div>
+          <h3 style={{ marginBottom:"12px", color:"#10b981" }}>Kayit Alindi!</h3>
+          <p style={{ fontSize:"14px", color:"#6b7280", marginBottom:"20px" }}>
+            Hesabin admin tarafindan onaylandiktan sonra giris yapabileceksin.
+          </p>
+          <button onClick={onKapat}
+            style={{ width:"100%", padding:"12px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer" }}>
+            Tamam
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>

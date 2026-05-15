@@ -9,6 +9,7 @@ function TeacherDashboard() {
   const [ogrenciler, setOgrenciler] = useState([]);
   const [ogrenciBilgileri, setOgrenciBilgileri] = useState({});
   const [bildirimler, setBildirimler] = useState([]);
+  const [ogretmenIsmi, setOgretmenIsmi] = useState("");
   const [yukleniyor, setYukleniyor] = useState(true);
   const [secilenProfil, setSecilenProfil] = useState(null);
   const [acikYorumlar, setAcikYorumlar] = useState({});
@@ -18,8 +19,10 @@ function TeacherDashboard() {
   useEffect(() => {
     const verileriGetir = async () => {
       const ogretmenDoc = await getDocFromServer(doc(db, "users", auth.currentUser.uid));
-      const sinif = ogretmenDoc.data()?.sinif || [];
+      const ogretmenData = ogretmenDoc.data();
+      const sinif = ogretmenData?.sinif || [];
       setOgrenciler(sinif);
+      setOgretmenIsmi(ogretmenData?.isim || auth.currentUser.email);
 
       const ogrenciBilgi = {};
       for (const uid of sinif) {
@@ -50,7 +53,6 @@ function TeacherDashboard() {
       ilgiliPostlar.sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
       setTumGonderiler(ilgiliPostlar);
 
-      // Bildirimleri cek - ogrenci ile ilgili olanlar
       const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
       const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       const ilgiliReports = tumReports.filter(r =>
@@ -102,6 +104,18 @@ function TeacherDashboard() {
     setBildirimler(prev => prev.filter(b => b.id !== reportId));
   };
 
+  const adminIlet = async (reportId) => {
+    if (!window.confirm("Bu bildirimi admine iletmek istediginizden emin misiniz?")) return;
+    await updateDoc(doc(db, "reports", reportId), {
+      adminIletildi: true,
+      ileten: ogretmenIsmi,
+      iletenRol: "teacher",
+      iletenUid: auth.currentUser.uid
+    });
+    setBildirimler(prev => prev.map(b => b.id === reportId ? { ...b, adminIletildi: true, ileten: ogretmenIsmi, iletenRol: "teacher" } : b));
+    alert("Bildirim admine iletildi!");
+  };
+
   const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.okundu).length;
   const yeniBildirimSayisi = bildirimler.filter(b => !b.okundu).length;
 
@@ -124,7 +138,6 @@ function TeacherDashboard() {
         </button>
       </div>
 
-      {/* Sekme */}
       <div style={{ display:"flex", gap:"8px", marginBottom:"20px" }}>
         <button onClick={() => setAktifSekme("etkilesimler")}
           style={{ flex:1, padding:"10px", background: aktifSekme === "etkilesimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "etkilesimler" ? "white" : "#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
@@ -162,6 +175,11 @@ function TeacherDashboard() {
                     YENI
                   </span>
                 )}
+                {b.adminIletildi && (
+                  <span style={{ background:"#d1fae5", color:"#065f46", padding:"2px 8px", borderRadius:"6px", fontSize:"11px", marginBottom:"6px", display:"inline-block", fontWeight:"600", marginLeft:"4px" }}>
+                    ✓ Admine iletildi
+                  </span>
+                )}
                 <p style={{ margin:"0 0 6px", fontSize:"13px", color:"#6b7280" }}>
                   📋 Sebep: <strong>{b.kategori}</strong>
                   {b.digerSebep && <span> — "{b.digerSebep}"</span>}
@@ -182,16 +200,22 @@ function TeacherDashboard() {
                 <p style={{ fontSize:"12px", color:"#6b7280", margin:"0 0 8px" }}>
                   🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline" }}>{b.bildiren}</span>
                 </p>
-                <div style={{ display:"flex", gap:"6px" }}>
+                <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
                   {!b.okundu && (
                     <button onClick={() => bildirimOkundu(b.id)}
-                      style={{ flex:1, padding:"6px 12px", background:"#10b981", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px", fontWeight:"600" }}>
-                      ✓ Okundu olarak isaretle
+                      style={{ flex:"1 1 45%", padding:"6px 12px", background:"#10b981", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px", fontWeight:"600" }}>
+                      ✓ Okundu
+                    </button>
+                  )}
+                  {!b.adminIletildi && (
+                    <button onClick={() => adminIlet(b.id)}
+                      style={{ flex:"1 1 45%", padding:"6px 12px", background:"#f59e0b", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px", fontWeight:"600" }}>
+                      📨 Admine Ilet
                     </button>
                   )}
                   <button onClick={() => bildirimSil(b.id)}
                     style={{ padding:"6px 12px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
-                    🗑️ Sil
+                    🗑️
                   </button>
                 </div>
               </div>

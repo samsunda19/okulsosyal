@@ -7,6 +7,7 @@ import ProfilSayfasi from "./ProfilSayfasi";
 function AdminDashboard() {
   const [gonderiler, setGonderiler] = useState([]);
   const [kullaniciler, setKullaniciler] = useState({});
+  const [bekleyenler, setBekleyenler] = useState([]);
   const [bildirimler, setBildirimler] = useState([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [secilenProfil, setSecilenProfil] = useState(null);
@@ -15,27 +16,36 @@ function AdminDashboard() {
   const [aktifSekme, setAktifSekme] = useState("etkilesimler");
 
   useEffect(() => {
-    const verileriGetir = async () => {
-      const postSnapshot = await getDocs(collection(db, "posts"));
-      const tumPosts = postSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      tumPosts.sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
-      setGonderiler(tumPosts);
-
-      const userSnapshot = await getDocs(collection(db, "users"));
-      const tumKullaniciler = {};
-      userSnapshot.docs.forEach(d => {
-        tumKullaniciler[d.id] = { id: d.id, ...d.data() };
-      });
-      setKullaniciler(tumKullaniciler);
-
-      const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
-      const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setBildirimler(tumReports);
-
-      setYukleniyor(false);
-    };
     verileriGetir();
   }, []);
+
+  const verileriGetir = async () => {
+    const postSnapshot = await getDocs(collection(db, "posts"));
+    const tumPosts = postSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    tumPosts.sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
+    setGonderiler(tumPosts);
+
+    const userSnapshot = await getDocs(collection(db, "users"));
+    const tumKullaniciler = {};
+    const bekleyenListesi = [];
+    userSnapshot.docs.forEach(d => {
+      const data = { id: d.id, ...d.data() };
+      tumKullaniciler[d.id] = data;
+      if (data.role === "student" && data.onaylandi === false) {
+        bekleyenListesi.push(data);
+      }
+    });
+    setKullaniciler(tumKullaniciler);
+    setBekleyenler(bekleyenListesi);
+
+    const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
+    const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Sadece admine iletilen bildirimler
+    const adminBildirimler = tumReports.filter(r => r.adminIletildi === true);
+    setBildirimler(adminBildirimler);
+
+    setYukleniyor(false);
+  };
 
   const handleSil = async (gonderiId) => {
     if (!window.confirm("Bu paylasimi silmek istediginizden emin misiniz?")) return;
@@ -75,8 +85,22 @@ function AdminDashboard() {
     setBildirimler(prev => prev.filter(b => b.id !== reportId));
   };
 
+  const kullaniciOnayla = async (kullaniciId) => {
+    await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true });
+    setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
+    alert("Kullanici onaylandi!");
+  };
+
+  const kullaniciReddet = async (kullaniciId) => {
+    if (!window.confirm("Bu kayit talebini reddedip silmek istediginizden emin misiniz?")) return;
+    await deleteDoc(doc(db, "users", kullaniciId));
+    setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
+    alert("Kayit reddedildi!");
+  };
+
   const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.okundu).length;
   const yeniBildirimSayisi = bildirimler.filter(b => !b.okundu).length;
+  const bekleyenSayisi = bekleyenler.length;
 
   return (
     <div style={{ maxWidth:"700px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
@@ -97,13 +121,13 @@ function AdminDashboard() {
         </button>
       </div>
 
-      <div style={{ display:"flex", gap:"8px", marginBottom:"20px" }}>
+      <div style={{ display:"flex", gap:"6px", marginBottom:"20px", flexWrap:"wrap" }}>
         <button onClick={() => setAktifSekme("etkilesimler")}
-          style={{ flex:1, padding:"10px", background: aktifSekme === "etkilesimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "etkilesimler" ? "white" : "#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
+          style={{ flex:"1 1 30%", padding:"10px", background: aktifSekme === "etkilesimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "etkilesimler" ? "white" : "#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px" }}>
           💬 Paylasimlar
         </button>
         <button onClick={() => setAktifSekme("bildirimler")}
-          style={{ flex:1, padding:"10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "bildirimler" ? "white" : "#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", position:"relative" }}>
+          style={{ flex:"1 1 30%", padding:"10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "bildirimler" ? "white" : "#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", position:"relative", fontSize:"13px" }}>
           🚩 Bildirimler
           {yeniBildirimSayisi > 0 && (
             <span style={{ position:"absolute", top:"-6px", right:"-6px", background: acilBildirimSayisi > 0 ? "#ef4444" : "#f59e0b", color:"white", borderRadius:"50%", width:"22px", height:"22px", fontSize:"11px", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"700" }}>
@@ -111,20 +135,60 @@ function AdminDashboard() {
             </span>
           )}
         </button>
+        <button onClick={() => setAktifSekme("bekleyenler")}
+          style={{ flex:"1 1 30%", padding:"10px", background: aktifSekme === "bekleyenler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "bekleyenler" ? "white" : "#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", position:"relative", fontSize:"13px" }}>
+          ⏳ Onaylar
+          {bekleyenSayisi > 0 && (
+            <span style={{ position:"absolute", top:"-6px", right:"-6px", background:"#10b981", color:"white", borderRadius:"50%", width:"22px", height:"22px", fontSize:"11px", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"700" }}>
+              {bekleyenSayisi}
+            </span>
+          )}
+        </button>
       </div>
 
       {yukleniyor ? (
         <p>Yukleniyor...</p>
+      ) : aktifSekme === "bekleyenler" ? (
+        <div>
+          {bekleyenler.length === 0 ? (
+            <div style={{ background:"white", padding:"20px", borderRadius:"12px", textAlign:"center", color:"#888" }}>
+              <p>Onay bekleyen kullanici yok.</p>
+            </div>
+          ) : (
+            <>
+              <h3 style={{ color:"#666", marginBottom:"16px" }}>
+                Onay Bekleyen Kullanicilar ({bekleyenler.length})
+              </h3>
+              {bekleyenler.map(k => (
+                <div key={k.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px" }}>
+                  <p style={{ margin:"0 0 4px", fontSize:"15px", fontWeight:"600" }}>{k.isim}</p>
+                  <p style={{ margin:"0 0 12px", fontSize:"13px", color:"#6b7280" }}>📧 {k.email}</p>
+                  <div style={{ display:"flex", gap:"8px" }}>
+                    <button onClick={() => kullaniciOnayla(k.id)}
+                      style={{ flex:1, padding:"8px", background:"#10b981", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px" }}>
+                      ✓ Onayla
+                    </button>
+                    <button onClick={() => kullaniciReddet(k.id)}
+                      style={{ flex:1, padding:"8px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px" }}>
+                      ✗ Reddet
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
       ) : aktifSekme === "bildirimler" ? (
         <div>
           {bildirimler.length === 0 ? (
             <div style={{ background:"white", padding:"20px", borderRadius:"12px", textAlign:"center", color:"#888" }}>
               <p>Hic bildirim yok.</p>
+              <p style={{ fontSize:"12px", marginTop:"8px" }}>(Sadece veli/ogretmen tarafindan iletilen bildirimler burada gorunur)</p>
             </div>
           ) : (
             <>
               <h3 style={{ color:"#666", marginBottom:"16px" }}>
-                Tum Bildirimler ({bildirimler.length})
+                Iletilen Bildirimler ({bildirimler.length})
               </h3>
               {bildirimler.map(b => (
                 <div key={b.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px", border: b.acil && !b.okundu ? "2px solid #ef4444" : "none" }}>
@@ -137,6 +201,11 @@ function AdminDashboard() {
                     <span style={{ background:"#fef3c7", color:"#92400e", padding:"2px 8px", borderRadius:"6px", fontSize:"11px", marginBottom:"6px", display:"inline-block", fontWeight:"600" }}>
                       YENI
                     </span>
+                  )}
+                  {b.ileten && (
+                    <p style={{ margin:"0 0 6px", fontSize:"12px", color:"#4f46e5", fontWeight:"600" }}>
+                      📨 Ileten: {b.ileten} ({b.iletenRol === "teacher" ? "Ogretmen" : "Veli"})
+                    </p>
                   )}
                   <p style={{ margin:"0 0 6px", fontSize:"13px", color:"#6b7280" }}>
                     📋 Sebep: <strong>{b.kategori}</strong>
