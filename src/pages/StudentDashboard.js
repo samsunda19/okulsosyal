@@ -3,6 +3,7 @@ import { db, auth } from "../firebase";
 import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
+import DM from "./DM";
 import boslukResmi from "../background2.png";
 
 const KUFUR_LISTESI = [
@@ -589,6 +590,12 @@ function StudentDashboard() {
           })}
         </div>
       </div>
+
+      <DM
+        kullaniciIsim={kullanici.isim}
+        arkadaslar={kullanici.arkadaslar}
+        karanlikMod={karanlikMod}
+      />
     </div>
   );
 }
