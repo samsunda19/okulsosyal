@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, where } from "firebase/firestore";
 
 const KUFUR_LISTESI = [
   "amk", "aq", "amq", "amına", "amini", "amcık", "amcik", "anasını",
@@ -42,6 +42,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       setArkadasBilgileri([]);
       setOkunmamisToplam(0);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arkadaslar]);
 
   useEffect(() => {
@@ -50,6 +51,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       const interval = setInterval(mesajlariGetir, 2000);
       return () => clearInterval(interval);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aktifKonusma]);
 
   const arkadasBilgileriniGetir = async () => {
@@ -95,7 +97,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
     const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     setMesajlar(liste);
 
-    // Bana gelen okunmamislari okundu yap
     for (const m of liste) {
       if (m.aliciUid === auth.currentUser.uid && !m.okundu) {
         await updateDoc(doc(db, "messages", kId, "mesajlar", m.id), { okundu: true });
@@ -123,7 +124,8 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       aliciUid: aktifKonusma.id,
       aliciIsim: aktifKonusma.isim,
       tarih: serverTimestamp(),
-      okundu: false
+      okundu: false,
+      silindi: false
     });
     setYeniMesaj("");
     await mesajlariGetir();
@@ -167,7 +169,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
 
   return (
     <>
-      {/* Sag alt buton */}
       <button onClick={() => setAcik(!acik)}
         style={{
           position:"fixed",
@@ -207,7 +208,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
         )}
       </button>
 
-      {/* Acilan panel */}
       {acik && (
         <div style={{
           position:"fixed",
@@ -224,7 +224,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
           overflow:"hidden"
         }}>
 
-          {/* Baslik */}
           <div style={{
             padding:"12px 16px",
             background:"#4f46e5",
@@ -250,10 +249,8 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
             </button>
           </div>
 
-          {/* Icerik */}
           <div style={{ flex:1, overflowY:"auto", padding:"12px" }}>
             {!aktifKonusma ? (
-              // Arkadas listesi
               arkadasBilgileri.length === 0 ? (
                 <p style={{ textAlign:"center", color: ikincilYazi, fontSize:"13px", marginTop:"20px" }}>
                   Henuz arkadasin yok. Arkadas ekleyince burada gozukur.
@@ -273,7 +270,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
                       alignItems:"center"
                     }}>
                     <div>
-                      <p style={{ margin:"0", fontSize:"13px", fontWeight:"600", color: yazi }}>{a.isim}</p>
+                      <p style={{ margin:"0", fontSize:"13px", fontWeight:"600", color: yazi }}>{a.isim || "Isimsiz Kullanici"}</p>
                       {a.sinif && <p style={{ margin:"0", fontSize:"11px", color: ikincilYazi }}>📚 {a.sinif}</p>}
                     </div>
                     {okunmamisHaritasi[a.id] > 0 && (
@@ -297,7 +294,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
                 ))
               )
             ) : (
-              // Mesajlar
               mesajlar.length === 0 ? (
                 <p style={{ textAlign:"center", color: ikincilYazi, fontSize:"13px", marginTop:"20px" }}>
                   Henuz mesaj yok. Ilk mesaji sen at!
@@ -346,7 +342,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
             )}
           </div>
 
-          {/* Mesaj yazma alani */}
           {aktifKonusma && (
             <div style={{ padding:"10px", borderTop: "1px solid " + cizgi, display:"flex", gap:"6px" }}>
               <input
