@@ -381,7 +381,7 @@ function StudentDashboard() {
                 💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
               </button>
             )}
-            {!benimPaylasimim && !bildirdimMi && (
+            {!benimPaylasimim && !bildirdimMi && !ogretmenPostu && (
               <button onClick={() => bildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
                 style={{ padding: "4px 10px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
                 🚩
