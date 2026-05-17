@@ -249,10 +249,11 @@ function StudentDashboard() {
 
   const begeniToggle = async (postId, begenenler, listeAdi) => {
     const benBegendimMi = begenenler && begenenler.includes(auth.currentUser.uid);
+    const koleksiyon = listeAdi === "ogretmen" ? "duyurular" : "posts";
     if (benBegendimMi) {
-      await updateDoc(doc(db, "posts", postId), { begenenler: arrayRemove(auth.currentUser.uid) });
+      await updateDoc(doc(db, koleksiyon, postId), { begenenler: arrayRemove(auth.currentUser.uid) });
     } else {
-      await updateDoc(doc(db, "posts", postId), { begenenler: arrayUnion(auth.currentUser.uid) });
+      await updateDoc(doc(db, koleksiyon, postId), { begenenler: arrayUnion(auth.currentUser.uid) });
     }
     const guncelle = (liste) => liste.map(g => {
       if (g.id !== postId) return g;
@@ -381,7 +382,7 @@ function StudentDashboard() {
                 💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
               </button>
             )}
-            {!benimPaylasimim && !bildirdimMi && !ogretmenPostu && (
+            {!benimPaylasimim && !bildirdimMi && (
               <button onClick={() => bildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
                 style={{ padding: "4px 10px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
                 🚩
