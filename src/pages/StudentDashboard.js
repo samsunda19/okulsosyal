@@ -1,24 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 import DM from "./DM";
 import boslukResmi from "../background2.png";
 
 const KUFUR_LISTESI = [
-  "amk", "aq", "amq", "amına", "amini", "amcık", "amcik", "anasını",
-  "siktir", "siktiret", "sikim", "sikme", "siker", "sikiyim", "sikerim", "sikiş",
+  "amk", "aq", "amq", "amina", "amini", "amcik", "amcik", "anasini",
+  "siktir", "siktiret", "sikim", "sikme", "siker", "sikiyim", "sikerim", "sikis",
   "siktigim", "sikilmis", "sikti", "sikiyo", "sikis", "sik",
-  "orospu", "orusbu", "oruspu", "kahpe", "fahişe", "fahise", "sürtük", "surtuk",
-  "piç", "pic", "puşt", "pust", "ibne", "ibnə",
-  "göt", "got", "götveren", "gotveren", "götlek", "gotlek",
-  "yarrak", "yarrağ", "yarra", "yarak",
-  "oç", "oc", "öç", "ananın", "ananı", "ananızın", "anasının", "ananin",
-  "babanı", "babanın", "babani",
-  "bacın", "bacını", "bacının",
+  "orospu", "orusbu", "oruspu", "kahpe", "fahise", "fahise", "surtuk", "surtuk",
+  "pic", "pic", "pust", "pust", "ibne", "ibne",
+  "got", "got", "gotveren", "gotveren", "gotlek", "gotlek",
+  "yarrak", "yarrag", "yarra", "yarak",
+  "oc", "oc", "ananin", "ananı", "ananizin", "anasinin", "ananin",
+  "babani", "babanin", "babani",
+  "bacin", "bacini", "bacinin",
   "bok", "boktan", "bokunu",
-  "salak", "aptal", "gerizekalı", "gerizekali", "mal", "öküz", "okuz",
+  "salak", "aptal", "gerizekali", "gerizekali", "mal", "okuz", "okuz",
   "fuck", "fucking", "shit", "bitch", "asshole", "bastard"
 ];
 
@@ -70,11 +70,14 @@ function StudentDashboard() {
   const [aramaMetni, setAramaMetni] = useState("");
   const [tumOgrenciler, setTumOgrenciler] = useState([]);
   const [aktifSekme, setAktifSekme] = useState("tumu");
+  // Ogrencinin bildirdigi post id'leri - sadece gosterim icin
+  const [bildirdigim, setBildirdigim] = useState([]);
 
   useEffect(() => {
     kullaniciBilgisiGetir();
     gonderileriGetir();
     ogrencileriGetir();
+    bildirimleriGetir();
     const interval = setInterval(kullaniciBilgisiGetir, 2000);
     return () => clearInterval(interval);
   }, []);
@@ -104,6 +107,15 @@ function StudentDashboard() {
     setTumOgrenciler(ogrenciler);
   };
 
+  // Ogrencinin daha once bildirdigi post id'lerini getir (rozet icin)
+  const bildirimleriGetir = async () => {
+    const snapshot = await getDocs(collection(db, "reports"));
+    const benimBildirimlerim = snapshot.docs
+      .filter(d => d.data().bildirenUid === auth.currentUser.uid)
+      .map(d => d.data().postId);
+    setBildirdigim(benimBildirimlerim);
+  };
+
   const kufurKontrol = (metin) => {
     const kucukMetin = metin.toLowerCase();
     return KUFUR_LISTESI.some(kufur => kucukMetin.includes(kufur));
@@ -112,14 +124,25 @@ function StudentDashboard() {
   const gonderileriGetir = async () => {
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const liste = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      // Ogrenci panelinde: veli/ogretmen/admin kaldirdiysa gizle
+      // Ogrenci kendi sildiginde akista "kaldirildi" olarak gorur, sikayet edebilir
+      .filter(g =>
+        !g.veliKaldirdi &&
+        !g.ogretmenKaldirdi &&
+        !g.adminSildi
+      );
     setGonderiler(liste);
   };
 
   const yorumlariGetir = async (postId) => {
     const q = query(collection(db, "posts", postId, "comments"), orderBy("tarih", "asc"));
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Soft delete - silinen yorumlar gizlenir
+    const liste = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(y => !y.silindi);
     setYorumlar(prev => ({ ...prev, [postId]: liste }));
   };
 
@@ -142,14 +165,21 @@ function StudentDashboard() {
       icerik: metin,
       yazar: kullanici.isim || auth.currentUser.email,
       yazarUid: auth.currentUser.uid,
-      tarih: serverTimestamp()
+      tarih: serverTimestamp(),
+      silindi: false
     });
     setYeniYorum(prev => ({ ...prev, [postId]: "" }));
     await yorumlariGetir(postId);
   };
 
+  // Yorum soft delete
   const yorumSil = async (postId, yorumId) => {
-    await deleteDoc(doc(db, "posts", postId, "comments", yorumId));
+    await updateDoc(doc(db, "posts", postId, "comments", yorumId), {
+      silindi: true,
+      silinmeTarihi: serverTimestamp(),
+      silenUid: auth.currentUser.uid,
+      silenRol: "student"
+    });
     await yorumlariGetir(postId);
   };
 
@@ -166,19 +196,32 @@ function StudentDashboard() {
       yazar: kullanici.isim || auth.currentUser.email,
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp(),
-      begenenler: []
+      begenenler: [],
+      // Soft delete alanlari - hepsi baslangicta false
+      ogrenciSildi: false,
+      veliKaldirdi: false,
+      ogretmenKaldirdi: false,
+      adminSildi: false
     });
     setGonderi("");
     await gonderileriGetir();
     setYukleniyor(false);
   };
 
+  // Gonderi soft delete - ogrenci kendi paylasimini siliyor
   const gonderiSil = async (id, yazarUid) => {
     if (yazarUid !== auth.currentUser.uid) return;
-    await deleteDoc(doc(db, "posts", id));
-    await gonderileriGetir();
+    await updateDoc(doc(db, "posts", id), {
+      ogrenciSildi: true,
+      silinmeTarihi: serverTimestamp(),
+      silenUid: auth.currentUser.uid,
+      silenRol: "student"
+    });
+    // Local state'den de kaldir
+    setGonderiler(prev => prev.filter(g => g.id !== id));
   };
 
+  // Begeni - local state guncelleme (performans icin tum listeyi yeniden cekmiyor)
   const begeniToggle = async (postId, begenenler) => {
     const benBegendimMi = begenenler && begenenler.includes(auth.currentUser.uid);
     if (benBegendimMi) {
@@ -190,7 +233,14 @@ function StudentDashboard() {
         begenenler: arrayUnion(auth.currentUser.uid)
       });
     }
-    await gonderileriGetir();
+    // Sadece ilgili postu guncelle, tum listeyi yeniden cekme
+    setGonderiler(prev => prev.map(g => {
+      if (g.id !== postId) return g;
+      const yeniBegenenler = benBegendimMi
+        ? (g.begenenler || []).filter(uid => uid !== auth.currentUser.uid)
+        : [...(g.begenenler || []), auth.currentUser.uid];
+      return { ...g, begenenler: yeniBegenenler };
+    }));
   };
 
   const bildirimBaslat = (tip, icerikId, postId, icerikMetni, yazarUid, yazar) => {
@@ -221,9 +271,17 @@ function StudentDashboard() {
       iyiMisin: iyiMisin,
       acil: iyiMisin === "yardim",
       tarih: serverTimestamp(),
-      okundu: false
+      okundu: false,
+      // Veli ve ogretmen icin bagimsiz takip alanlari
+      veliGordu: false,
+      veliSildi: false,
+      ogretmenGordu: false,
+      ogretmenSildi: false,
+      adminaIletti: false
     });
 
+    // Bildirilen post id'yi local listeye ekle (rozet icin)
+    setBildirdigim(prev => [...prev, bildirimModal.postId]);
     setBildirimModal(null);
     alert("✅ Bildirimin alindi! Veli ve ogretmenlerin bilgilendirildi.");
   };
@@ -240,7 +298,6 @@ function StudentDashboard() {
       })
     : [];
 
-  // Sadece arkadaslarin paylasimlari (kendininki olmasin)
   const filtrelenmisGonderiler = aktifSekme === "arkadaslar"
     ? gonderiler.filter(g => kullanici.arkadaslar.includes(g.yazarUid))
     : gonderiler.filter(g => !kullanici.engellenenler.includes(g.yazarUid));
@@ -507,9 +564,25 @@ function StudentDashboard() {
             const begenenler = g.begenenler || [];
             const benBegendimMi = begenenler.includes(auth.currentUser.uid);
             const benimPaylasimim = g.yazarUid === auth.currentUser.uid;
+            const bildirdimMi = bildirdigim.includes(g.id);
             return (
-              <div key={g.id} style={{ background: kartArkaplan, padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px" }}>
-                <p style={{ margin:"0 0 8px 0", fontSize:"15px", color: kartYazi }}>{g.icerik}</p>
+              <div key={g.id} style={{ background: kartArkaplan, padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px", opacity: g.ogrenciSildi ? 0.75 : 1 }}>
+
+                {g.ogrenciSildi ? (
+                  <p style={{ margin:"0 0 8px 0", fontSize:"13px", color: kartIkincilYazi, fontStyle:"italic" }}>
+                    🗑️ Bu gonderi kaldirildi.
+                  </p>
+                ) : (
+                  <p style={{ margin:"0 0 8px 0", fontSize:"15px", color: kartYazi }}>{g.icerik}</p>
+                )}
+
+                {/* Bildirildi rozeti - sadece ogrenci kendisi bildirdiyse gorur */}
+                {bildirdimMi && (
+                  <div style={{ fontSize:"11px", color:"#92400e", background:"#fef3c7", padding:"3px 8px", borderRadius:"6px", display:"inline-block", marginBottom:"6px" }}>
+                    🚩 Bu icerigi bildirdin
+                  </div>
+                )}
+
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" }}>
                   <small
                     onClick={() => setSecilenProfil(g.yazarUid)}
@@ -526,13 +599,15 @@ function StudentDashboard() {
                       style={{ padding:"4px 10px", background:"#e0e7ff", color:"#4f46e5", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
                       💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
                     </button>
-                    {!benimPaylasimim && (
+                    {/* Baskasinin silinen gonderisi de sikayet edilebilir */}
+                    {!benimPaylasimim && !bildirdimMi && (
                       <button onClick={() => bildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
                         style={{ padding:"4px 10px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
                         🚩
                       </button>
                     )}
-                    {benimPaylasimim && (
+                    {/* Kendi gonderisi: silmediyse sil butonu goster */}
+                    {benimPaylasimim && !g.ogrenciSildi && (
                       <button onClick={() => gonderiSil(g.id, g.yazarUid)}
                         style={{ padding:"4px 10px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
                         Sil

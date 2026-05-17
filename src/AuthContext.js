@@ -11,8 +11,10 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [dondurulmaMesaj, setDondurulmaMesaj] = useState("");
   const [onayMesaj, setOnayMesaj] = useState("");
+  const [reddedildiMesaj, setReddedildiMesaj] = useState("");
   const dondurulduRef = useRef(false);
   const onaylanmadiRef = useRef(false);
+  const reddedildiRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -21,6 +23,17 @@ export function AuthProvider({ children }) {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
+
+          // Reddedildi kontrolu
+          if (data.reddedildi === true) {
+            reddedildiRef.current = true;
+            setReddedildiMesaj("Kayit talebiniz reddedilmistir. Lutfen okul idaresiyle iletisime gecin.");
+            setCurrentUser(null);
+            setUserRole(null);
+            setLoading(false);
+            await signOut(auth);
+            return;
+          }
 
           // Onaylanma kontrolu (sadece student rolu icin)
           if (data.role === "student" && data.onaylandi === false) {
@@ -61,6 +74,7 @@ export function AuthProvider({ children }) {
           setCurrentUser(user);
           dondurulduRef.current = false;
           onaylanmadiRef.current = false;
+          reddedildiRef.current = false;
         }
       } else {
         setCurrentUser(null);
@@ -70,6 +84,9 @@ export function AuthProvider({ children }) {
         }
         if (!onaylanmadiRef.current) {
           setOnayMesaj("");
+        }
+        if (!reddedildiRef.current) {
+          setReddedildiMesaj("");
         }
       }
       setLoading(false);
@@ -130,6 +147,36 @@ export function AuthProvider({ children }) {
               onClick={() => {
                 onaylanmadiRef.current = false;
                 setOnayMesaj("");
+              }}
+              style={{
+                padding: "10px 24px", background: "#4f46e5", color: "white",
+                border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600"
+              }}>
+              Tamam
+            </button>
+          </div>
+        </div>
+      )}
+
+      {reddedildiMesaj && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+          background: "rgba(0,0,0,0.5)", display: "flex", justifyContent: "center",
+          alignItems: "center", zIndex: 9999
+        }}>
+          <div style={{
+            background: "white", padding: "30px", borderRadius: "16px",
+            width: "320px", textAlign: "center"
+          }}>
+            <div style={{ fontSize: "40px", marginBottom: "15px" }}>❌</div>
+            <h3 style={{ color: "#ef4444", marginBottom: "10px" }}>Kayit Reddedildi</h3>
+            <p style={{ color: "#6b7280", fontSize: "14px", marginBottom: "20px" }}>
+              {reddedildiMesaj}
+            </p>
+            <button
+              onClick={() => {
+                reddedildiRef.current = false;
+                setReddedildiMesaj("");
               }}
               style={{
                 padding: "10px 24px", background: "#4f46e5", color: "white",

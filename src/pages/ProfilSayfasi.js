@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { doc, getDoc, updateDoc, collection, getDocs, arrayUnion, arrayRemove, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, getDocs, arrayUnion, arrayRemove, serverTimestamp } from "firebase/firestore";
 
 const ARKAPLANLAR = [
   { id: "varsayilan", isim: "Balonlu Cocuklar", deger: "url(/background2.png)", tip: "resim" },
@@ -62,7 +62,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   const [dondurmModal, setDondurmModal] = useState(false);
   const [dondurmeSuresi, setDondurmeSuresi] = useState("");
   const [ozelArkaplan, setOzelArkaplan] = useState(null);
-const [duzenlenenPostId, setDuzenlenenPostId] = useState(null);
+  const [duzenlenenPostId, setDuzenlenenPostId] = useState(null);
   const [duzenlenenMetin, setDuzenlenenMetin] = useState("");
   const benimProfilim = kullaniciId === auth.currentUser.uid;
   const yetkili = ["admin", "teacher", "parent"].includes(mevcutKullaniciRol);
@@ -85,7 +85,6 @@ const [duzenlenenPostId, setDuzenlenenPostId] = useState(null);
           setBenimProfilim2(benDoc.data());
         }
       } else {
-        // Kendi profilimde engellenenleri listele
         const benDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
         if (benDoc.exists()) {
           const benimData = benDoc.data();
@@ -106,23 +105,25 @@ const [duzenlenenPostId, setDuzenlenenPostId] = useState(null);
 
       const postSnapshot = await getDocs(collection(db, "posts"));
       const tumPosts = postSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      const kullaniciPosts = tumPosts.filter(p => p.yazarUid === kullaniciId);
-      kullaniciPosts.sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
+      const kullaniciPosts = tumPosts
+        .filter(p => p.yazarUid === kullaniciId)
+        .sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
       setGonderiler(kullaniciPosts);
 
       let yorumSayisi = 0;
       let begeniSayisi = 0;
       for (const post of tumPosts) {
         const yorumSnapshot = await getDocs(collection(db, "posts", post.id, "comments"));
-        const yorumDocs = yorumSnapshot.docs;
-        for (const d of yorumDocs) {
-          if (d.data().yazarUid === kullaniciId) yorumSayisi++;
+        for (const d of yorumSnapshot.docs) {
+          if (d.data().yazarUid === kullaniciId && !d.data().silindi) yorumSayisi++;
         }
         if (post.yazarUid === kullaniciId) {
           begeniSayisi += (post.begenenler || []).length;
         }
       }
-      setIstatistik({ paylasim: kullaniciPosts.length, yorum: yorumSayisi, begeni: begeniSayisi });
+      // Istatistikte sadece silinmemis paylasimlar
+      const aktifPaylasimlar = kullaniciPosts.filter(p => !p.ogrenciSildi && !p.veliKaldirdi && !p.ogretmenKaldirdi && !p.adminSildi);
+      setIstatistik({ paylasim: aktifPaylasimlar.length, yorum: yorumSayisi, begeni: begeniSayisi });
 
       const ozelKayit = localStorage.getItem("ozelArkaplan_" + kullaniciId);
       if (ozelKayit) setOzelArkaplan(ozelKayit);
@@ -195,37 +196,41 @@ const [duzenlenenPostId, setDuzenlenenPostId] = useState(null);
     alert("Dondurma kaldirildi!");
   };
 
+  // Gonderi soft delete - profil sayfasindan silme
   const gonderiSil = async (gonderiId) => {
     if (!window.confirm("Bu paylasimi silmek istediginizden emin misiniz?")) return;
-    await deleteDoc(doc(db, "posts", gonderiId));
-    setGonderiler(prev => prev.filter(g => g.id !== gonderiId));
+    await updateDoc(doc(db, "posts", gonderiId), {
+      ogrenciSildi: true,
+      silinmeTarihi: serverTimestamp(),
+      silenUid: auth.currentUser.uid,
+      silenRol: "student"
+    });
+    // Listede silindi olarak isaretlenir, tamamen kaybolmaz
+    setGonderiler(prev => prev.map(g =>
+      g.id === gonderiId ? { ...g, ogrenciSildi: true } : g
+    ));
+    // Istatistigi guncelle
     setIstatistik(prev => ({ ...prev, paylasim: prev.paylasim - 1 }));
   };
-const gonderiDuzenleKaydet = async (gonderiId) => {
+
+  const gonderiDuzenleKaydet = async (gonderiId) => {
     if (!duzenlenenMetin.trim()) return;
     await updateDoc(doc(db, "posts", gonderiId), { icerik: duzenlenenMetin });
     setGonderiler(prev => prev.map(g => g.id === gonderiId ? { ...g, icerik: duzenlenenMetin } : g));
     setDuzenlenenPostId(null);
     setDuzenlenenMetin("");
   };
+
   const istekGonder = async () => {
-    await updateDoc(doc(db, "users", kullaniciId), {
-      gelenIstekler: arrayUnion(auth.currentUser.uid)
-    });
-    await updateDoc(doc(db, "users", auth.currentUser.uid), {
-      gidenIstekler: arrayUnion(kullaniciId)
-    });
+    await updateDoc(doc(db, "users", kullaniciId), { gelenIstekler: arrayUnion(auth.currentUser.uid) });
+    await updateDoc(doc(db, "users", auth.currentUser.uid), { gidenIstekler: arrayUnion(kullaniciId) });
     setBenimProfilim2(prev => ({ ...prev, gidenIstekler: [...(prev?.gidenIstekler || []), kullaniciId] }));
     alert("Istek gonderildi!");
   };
 
   const istegiIptal = async () => {
-    await updateDoc(doc(db, "users", kullaniciId), {
-      gelenIstekler: arrayRemove(auth.currentUser.uid)
-    });
-    await updateDoc(doc(db, "users", auth.currentUser.uid), {
-      gidenIstekler: arrayRemove(kullaniciId)
-    });
+    await updateDoc(doc(db, "users", kullaniciId), { gelenIstekler: arrayRemove(auth.currentUser.uid) });
+    await updateDoc(doc(db, "users", auth.currentUser.uid), { gidenIstekler: arrayRemove(kullaniciId) });
     setBenimProfilim2(prev => ({ ...prev, gidenIstekler: (prev?.gidenIstekler || []).filter(u => u !== kullaniciId) }));
     alert("Istek iptal edildi!");
   };
@@ -248,26 +253,18 @@ const gonderiDuzenleKaydet = async (gonderiId) => {
   };
 
   const istegiReddet = async () => {
-    await updateDoc(doc(db, "users", auth.currentUser.uid), {
-      gelenIstekler: arrayRemove(kullaniciId)
-    });
-    await updateDoc(doc(db, "users", kullaniciId), {
-      gidenIstekler: arrayRemove(auth.currentUser.uid)
-    });
+    await updateDoc(doc(db, "users", auth.currentUser.uid), { gelenIstekler: arrayRemove(kullaniciId) });
+    await updateDoc(doc(db, "users", kullaniciId), { gidenIstekler: arrayRemove(auth.currentUser.uid) });
     setBenimProfilim2(prev => ({ ...prev, gelenIstekler: (prev?.gelenIstekler || []).filter(u => u !== kullaniciId) }));
     alert("Istek reddedildi!");
   };
 
   const arkadasliktanCikar = async () => {
     if (!window.confirm("Arkadaslikten cikarmak istediginizden emin misiniz?")) return;
-    await updateDoc(doc(db, "users", auth.currentUser.uid), {
-      arkadaslar: arrayRemove(kullaniciId)
-    });
-    await updateDoc(doc(db, "users", kullaniciId), {
-      arkadaslar: arrayRemove(auth.currentUser.uid)
-    });
+    await updateDoc(doc(db, "users", auth.currentUser.uid), { arkadaslar: arrayRemove(kullaniciId) });
+    await updateDoc(doc(db, "users", kullaniciId), { arkadaslar: arrayRemove(auth.currentUser.uid) });
     setBenimProfilim2(prev => ({ ...prev, arkadaslar: (prev?.arkadaslar || []).filter(u => u !== kullaniciId) }));
-    alert("Arkadaslikten cikarildi!");
+    alert("Arkadasliktan cikarildi!");
   };
 
   const engelle = async () => {
@@ -294,9 +291,7 @@ const gonderiDuzenleKaydet = async (gonderiId) => {
   };
 
   const engelKaldir = async (uid) => {
-    await updateDoc(doc(db, "users", auth.currentUser.uid), {
-      engellenenler: arrayRemove(uid)
-    });
+    await updateDoc(doc(db, "users", auth.currentUser.uid), { engellenenler: arrayRemove(uid) });
     setBenimProfilim2(prev => ({ ...prev, engellenenler: (prev?.engellenenler || []).filter(u => u !== uid) }));
     setEngellenenlerListesi(prev => prev.filter(k => k.id !== uid));
     alert("Engel kaldirildi!");
@@ -378,7 +373,6 @@ const gonderiDuzenleKaydet = async (gonderiId) => {
                   {profilIsim}
                 </h2>
               )}
-
               {profil?.dondurulmus && (
                 <span style={{ background:"#fee2e2", color:"#ef4444", padding:"3px 10px", borderRadius:"10px", fontSize:"12px", marginTop:"6px", display:"inline-block" }}>
                   🔒 Dondurulmus
@@ -473,7 +467,7 @@ const gonderiDuzenleKaydet = async (gonderiId) => {
                 {arkadasMi && (
                   <button onClick={arkadasliktanCikar}
                     style={{ flex:"1 1 45%", padding:"10px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>
-                    ❌ Arkadaslikten Cikar
+                    ❌ Arkadasliktan Cikar
                   </button>
                 )}
                 {istekAlmisMi && (
@@ -569,7 +563,6 @@ const gonderiDuzenleKaydet = async (gonderiId) => {
                   🌙 Karanlik Mod
                 </button>
               </div>
-
               <h3 style={{ fontSize:"15px", marginBottom:"12px" }}>📷 Kendi Fotografin</h3>
               <label style={{ display:"block", width:"100%", padding:"12px", background:"#10b981", color:"white", borderRadius:"8px", cursor:"pointer", textAlign:"center", fontWeight:"600", marginBottom:"16px" }}>
                 📁 Bilgisayardan Fotograf Sec
@@ -582,24 +575,16 @@ const gonderiDuzenleKaydet = async (gonderiId) => {
                   <p style={{ fontSize:"11px", color:"#9ca3af", marginTop:"4px" }}>⚠️ Sadece bu cihazda gorunur</p>
                 </div>
               )}
-
               <h3 style={{ fontSize:"15px", marginBottom:"12px" }}>🎨 Arka Plan Sec</h3>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:"8px" }}>
                 {ARKAPLANLAR.map(arka => (
                   <div key={arka.id}
                     onClick={() => temaSec(arka.id, undefined)}
                     style={{
-                      background: arka.deger,
-                      backgroundSize: arka.tip === "resim" ? "cover" : "auto",
-                      backgroundPosition:"center",
-                      height:"60px",
-                      borderRadius:"8px",
-                      cursor:"pointer",
+                      background: arka.deger, backgroundSize: arka.tip === "resim" ? "cover" : "auto",
+                      backgroundPosition:"center", height:"60px", borderRadius:"8px", cursor:"pointer",
                       border: profil?.arkaplan === arka.id ? "3px solid #4f46e5" : "3px solid transparent",
-                      display:"flex",
-                      alignItems:"flex-end",
-                      justifyContent:"center",
-                      padding:"4px"
+                      display:"flex", alignItems:"flex-end", justifyContent:"center", padding:"4px"
                     }}>
                     <span style={{ background:"rgba(0,0,0,0.5)", color:"white", padding:"2px 6px", borderRadius:"4px", fontSize:"10px", fontWeight:"600" }}>
                       {arka.isim}
@@ -610,48 +595,68 @@ const gonderiDuzenleKaydet = async (gonderiId) => {
             </div>
           )}
 
+          {/* Paylasimlar listesi */}
           <h3 style={{ fontSize:"16px", color:"#374151", marginBottom:"12px" }}>
-            Paylasimlar ({gonderiler.length})
+            Paylasimlar ({istatistik.paylasim})
           </h3>
           {gonderiler.length === 0 ? (
             <p style={{ color:"#9ca3af", textAlign:"center" }}>Hic paylasim yok.</p>
           ) : (
-            gonderiler.map(g => (
-              <div key={g.id} style={{ background:"#f9fafb", padding:"12px", borderRadius:"10px", marginBottom:"8px", position:"relative" }}>
-                {duzenlenenPostId === g.id ? (
-                  <>
-                    <textarea value={duzenlenenMetin} onChange={e => setDuzenlenenMetin(e.target.value)}
-                      style={{ width:"100%", padding:"8px", borderRadius:"6px", border:"1px solid #ddd", fontSize:"14px", minHeight:"60px", boxSizing:"border-box", fontFamily:"inherit", marginBottom:"6px" }} />
-                    <div style={{ display:"flex", gap:"6px" }}>
-                      <button onClick={() => gonderiDuzenleKaydet(g.id)}
-                        style={{ padding:"4px 10px", background:"#10b981", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px", fontWeight:"600" }}>
-                        💾 Kaydet
-                      </button>
-                      <button onClick={() => { setDuzenlenenPostId(null); setDuzenlenenMetin(""); }}
-                        style={{ padding:"4px 10px", background:"#e5e7eb", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>
-                        Vazgec
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p style={{ margin:"0", fontSize:"14px", color:"#374151", paddingRight: benimProfilim ? "90px" : "0" }}>{g.icerik}</p>
-                    {benimProfilim && (
-                      <div style={{ position:"absolute", top:"8px", right:"8px", display:"flex", gap:"4px" }}>
-                        <button onClick={() => { setDuzenlenenPostId(g.id); setDuzenlenenMetin(g.icerik); }}
-                          style={{ padding:"4px 8px", background:"#4f46e5", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>
-                          ✏️
+            gonderiler.map(g => {
+              const kaldirildi = g.ogrenciSildi || g.veliKaldirdi || g.ogretmenKaldirdi || g.adminSildi;
+              return (
+                <div key={g.id} style={{
+                  background: kaldirildi ? "#f3f4f6" : "#f9fafb",
+                  padding:"12px", borderRadius:"10px", marginBottom:"8px", position:"relative",
+                  opacity: kaldirildi ? 0.65 : 1
+                }}>
+                  {duzenlenenPostId === g.id ? (
+                    <>
+                      <textarea value={duzenlenenMetin} onChange={e => setDuzenlenenMetin(e.target.value)}
+                        style={{ width:"100%", padding:"8px", borderRadius:"6px", border:"1px solid #ddd", fontSize:"14px", minHeight:"60px", boxSizing:"border-box", fontFamily:"inherit", marginBottom:"6px" }} />
+                      <div style={{ display:"flex", gap:"6px" }}>
+                        <button onClick={() => gonderiDuzenleKaydet(g.id)}
+                          style={{ padding:"4px 10px", background:"#10b981", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px", fontWeight:"600" }}>
+                          💾 Kaydet
                         </button>
-                        <button onClick={() => gonderiSil(g.id)}
-                          style={{ padding:"4px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>
-                          🗑️
+                        <button onClick={() => { setDuzenlenenPostId(null); setDuzenlenenMetin(""); }}
+                          style={{ padding:"4px 10px", background:"#e5e7eb", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>
+                          Vazgec
                         </button>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))
+                    </>
+                  ) : (
+                    <>
+                      {/* Kaldirma rozeti */}
+                      {kaldirildi && (
+                        <div style={{ display:"flex", gap:"4px", flexWrap:"wrap", marginBottom:"4px" }}>
+                          {g.ogrenciSildi && <span style={{ background:"#e5e7eb", color:"#6b7280", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Silindi</span>}
+                          {g.veliKaldirdi && <span style={{ background:"#ede9fe", color:"#5b21b6", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Veli kaldirdi</span>}
+                          {g.ogretmenKaldirdi && <span style={{ background:"#fef3c7", color:"#92400e", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Ogretmen kaldirdi</span>}
+                          {g.adminSildi && <span style={{ background:"#fee2e2", color:"#991b1b", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Admin kaldirdi</span>}
+                        </div>
+                      )}
+                      <p style={{ margin:"0", fontSize:"14px", color: kaldirildi ? "#9ca3af" : "#374151", paddingRight: benimProfilim && !kaldirildi ? "90px" : "0", fontStyle: kaldirildi ? "italic" : "normal" }}>
+                        {kaldirildi ? "Bu gonderi kaldirildi." : g.icerik}
+                      </p>
+                      {/* Duzenleme ve silme sadece kaldirilmamissa */}
+                      {benimProfilim && !kaldirildi && (
+                        <div style={{ position:"absolute", top:"8px", right:"8px", display:"flex", gap:"4px" }}>
+                          <button onClick={() => { setDuzenlenenPostId(g.id); setDuzenlenenMetin(g.icerik); }}
+                            style={{ padding:"4px 8px", background:"#4f46e5", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>
+                            ✏️
+                          </button>
+                          <button onClick={() => gonderiSil(g.id)}
+                            style={{ padding:"4px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>
+                            🗑️
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </div>

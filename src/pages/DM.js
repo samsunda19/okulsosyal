@@ -3,18 +3,18 @@ import { db, auth } from "../firebase";
 import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, where } from "firebase/firestore";
 
 const KUFUR_LISTESI = [
-  "amk", "aq", "amq", "amına", "amini", "amcık", "amcik", "anasını",
-  "siktir", "siktiret", "sikim", "sikme", "siker", "sikiyim", "sikerim", "sikiş",
+  "amk", "aq", "amq", "amina", "amini", "amcik", "amcik", "anasini",
+  "siktir", "siktiret", "sikim", "sikme", "siker", "sikiyim", "sikerim", "sikis",
   "siktigim", "sikilmis", "sikti", "sikiyo", "sikis", "sik",
-  "orospu", "orusbu", "oruspu", "kahpe", "fahişe", "fahise", "sürtük", "surtuk",
-  "piç", "pic", "puşt", "pust", "ibne", "ibnə",
-  "göt", "got", "götveren", "gotveren", "götlek", "gotlek",
-  "yarrak", "yarrağ", "yarra", "yarak",
-  "oç", "oc", "öç", "ananın", "ananı", "ananızın", "anasının", "ananin",
-  "babanı", "babanın", "babani",
-  "bacın", "bacını", "bacının",
+  "orospu", "orusbu", "oruspu", "kahpe", "fahise", "fahise", "surtuk", "surtuk",
+  "pic", "pic", "pust", "pust", "ibne", "ibne",
+  "got", "got", "gotveren", "gotveren", "gotlek", "gotlek",
+  "yarrak", "yarrag", "yarra", "yarak",
+  "oc", "oc", "ananin", "ananı", "ananizin", "anasinin", "ananin",
+  "babani", "babanin", "babani",
+  "bacin", "bacini", "bacinin",
   "bok", "boktan", "bokunu",
-  "salak", "aptal", "gerizekalı", "gerizekali", "mal", "öküz", "okuz",
+  "salak", "aptal", "gerizekali", "gerizekali", "mal", "okuz", "okuz",
   "fuck", "fucking", "shit", "bitch", "asshole", "bastard"
 ];
 
@@ -42,7 +42,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       setArkadasBilgileri([]);
       setOkunmamisToplam(0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arkadaslar]);
 
   useEffect(() => {
@@ -51,7 +50,6 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       const interval = setInterval(mesajlariGetir, 2000);
       return () => clearInterval(interval);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aktifKonusma]);
 
   const arkadasBilgileriniGetir = async () => {
@@ -78,9 +76,8 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
           where("okundu", "==", false)
         );
         const snapshot = await getDocs(q);
-        const sayi = snapshot.size;
-        harita[uid] = sayi;
-        toplam += sayi;
+        harita[uid] = snapshot.size;
+        toplam += snapshot.size;
       } catch (e) {
         harita[uid] = 0;
       }
@@ -132,6 +129,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
     setYukleniyor(false);
   };
 
+  // Mesaj soft delete - zaten var, aynen kaliyor
   const mesajSil = async (mesajId) => {
     if (!window.confirm("Bu mesaji silmek istediginizden emin misiniz?")) return;
     const kId = konusmaId(auth.currentUser.uid, aktifKonusma.id);
@@ -139,6 +137,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
     await mesajlariGetir();
   };
 
+  // Mesaj sikayet - diger dosyalarla tutarli report alanlari
   const mesajSikayet = async (mesaj) => {
     const sebep = window.prompt("Bu mesaji neden sikayet ediyorsun?");
     if (!sebep || !sebep.trim()) return;
@@ -146,6 +145,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       tip: "dm",
       icerikId: mesaj.id,
       konusmaId: konusmaId(auth.currentUser.uid, aktifKonusma.id),
+      postId: null,
       icerikMetni: mesaj.icerik,
       yazarUid: mesaj.gondericiUid,
       yazar: mesaj.gondericiIsim,
@@ -157,7 +157,13 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       iyiMisin: null,
       acil: false,
       tarih: serverTimestamp(),
-      okundu: false
+      okundu: false,
+      // Diger dosyalarla tutarli takip alanlari
+      veliGordu: false,
+      veliSildi: false,
+      ogretmenGordu: false,
+      ogretmenSildi: false,
+      adminaIletti: false
     });
     alert("✅ Sikayetin alindi! Veli ve ogretmenlerin bilgilendirildi.");
   };
@@ -171,37 +177,20 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
     <>
       <button onClick={() => setAcik(!acik)}
         style={{
-          position:"fixed",
-          bottom:"20px",
-          right:"20px",
-          width:"60px",
-          height:"60px",
-          borderRadius:"50%",
-          background:"#4f46e5",
-          color:"white",
-          border:"none",
-          cursor:"pointer",
-          fontSize:"24px",
-          boxShadow:"0 4px 12px rgba(0,0,0,0.2)",
-          zIndex:998
+          position:"fixed", bottom:"20px", right:"20px",
+          width:"60px", height:"60px", borderRadius:"50%",
+          background:"#4f46e5", color:"white", border:"none",
+          cursor:"pointer", fontSize:"24px",
+          boxShadow:"0 4px 12px rgba(0,0,0,0.2)", zIndex:998
         }}>
         💬
         {okunmamisToplam > 0 && (
           <span style={{
-            position:"absolute",
-            top:"-4px",
-            right:"-4px",
-            background:"#ef4444",
-            color:"white",
-            borderRadius:"50%",
-            minWidth:"22px",
-            height:"22px",
-            fontSize:"11px",
-            display:"flex",
-            alignItems:"center",
-            justifyContent:"center",
-            fontWeight:"700",
-            padding:"0 4px"
+            position:"absolute", top:"-4px", right:"-4px",
+            background:"#ef4444", color:"white", borderRadius:"50%",
+            minWidth:"22px", height:"22px", fontSize:"11px",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontWeight:"700", padding:"0 4px"
           }}>
             {okunmamisToplam}
           </span>
@@ -210,27 +199,14 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
 
       {acik && (
         <div style={{
-          position:"fixed",
-          bottom:"90px",
-          right:"20px",
-          width:"340px",
-          height:"500px",
-          background: arkaplan,
-          borderRadius:"16px",
-          boxShadow:"0 8px 24px rgba(0,0,0,0.2)",
-          zIndex:998,
-          display:"flex",
-          flexDirection:"column",
-          overflow:"hidden"
+          position:"fixed", bottom:"90px", right:"20px",
+          width:"340px", height:"500px", background: arkaplan,
+          borderRadius:"16px", boxShadow:"0 8px 24px rgba(0,0,0,0.2)",
+          zIndex:998, display:"flex", flexDirection:"column", overflow:"hidden"
         }}>
-
           <div style={{
-            padding:"12px 16px",
-            background:"#4f46e5",
-            color:"white",
-            display:"flex",
-            justifyContent:"space-between",
-            alignItems:"center"
+            padding:"12px 16px", background:"#4f46e5", color:"white",
+            display:"flex", justifyContent:"space-between", alignItems:"center"
           }}>
             {aktifKonusma ? (
               <>
@@ -260,14 +236,9 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
                   <div key={a.id}
                     onClick={() => setAktifKonusma(a)}
                     style={{
-                      padding:"10px",
-                      background: karanlikMod ? "#374151" : "#f9fafb",
-                      borderRadius:"8px",
-                      marginBottom:"6px",
-                      cursor:"pointer",
-                      display:"flex",
-                      justifyContent:"space-between",
-                      alignItems:"center"
+                      padding:"10px", background: karanlikMod ? "#374151" : "#f9fafb",
+                      borderRadius:"8px", marginBottom:"6px", cursor:"pointer",
+                      display:"flex", justifyContent:"space-between", alignItems:"center"
                     }}>
                     <div>
                       <p style={{ margin:"0", fontSize:"13px", fontWeight:"600", color: yazi }}>{a.isim || "Isimsiz Kullanici"}</p>
@@ -275,17 +246,10 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
                     </div>
                     {okunmamisHaritasi[a.id] > 0 && (
                       <span style={{
-                        background:"#ef4444",
-                        color:"white",
-                        borderRadius:"50%",
-                        minWidth:"20px",
-                        height:"20px",
-                        fontSize:"11px",
-                        display:"flex",
-                        alignItems:"center",
-                        justifyContent:"center",
-                        fontWeight:"700",
-                        padding:"0 4px"
+                        background:"#ef4444", color:"white", borderRadius:"50%",
+                        minWidth:"20px", height:"20px", fontSize:"11px",
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        fontWeight:"700", padding:"0 4px"
                       }}>
                         {okunmamisHaritasi[a.id]}
                       </span>
@@ -310,11 +274,8 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
                       <div style={{
                         background: m.silindi ? (karanlikMod ? "#4b5563" : "#e5e7eb") : (benim ? "#4f46e5" : (karanlikMod ? "#374151" : "#f3f4f6")),
                         color: m.silindi ? ikincilYazi : (benim ? "white" : yazi),
-                        padding:"8px 12px",
-                        borderRadius:"12px",
-                        maxWidth:"70%",
-                        wordBreak:"break-word",
-                        position:"relative",
+                        padding:"8px 12px", borderRadius:"12px",
+                        maxWidth:"70%", wordBreak:"break-word",
                         fontStyle: m.silindi ? "italic" : "normal"
                       }}>
                         <p style={{ margin:"0", fontSize:"13px" }}>
@@ -327,6 +288,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
                               🗑️
                             </button>
                           )}
+                          {/* Silinen mesaj da sikayet edilebilir */}
                           {!benim && (
                             <button onClick={() => mesajSikayet(m)}
                               style={{ background:"transparent", border:"none", cursor:"pointer", fontSize:"11px", padding:"0" }}>
