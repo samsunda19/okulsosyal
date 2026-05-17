@@ -76,18 +76,23 @@ function StudentDashboard() {
   const [gorulmemisOgretmenPost, setGorulmemisOgretmenPost] = useState(0);
 
   useEffect(() => {
-    kullaniciBilgisiGetir();
-    gonderileriGetir();
-    ogrencileriGetir();
-    bildirimleriGetir();
+    ilkYukle();
     const interval = setInterval(kullaniciBilgisiGetir, 2000);
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const ilkYukle = async () => {
+    await kullaniciBilgisiGetir();
+    ogrencileriGetir();
+    bildirimleriGetir();
+  };
+
   const kullaniciBilgisiGetir = async () => {
+    if (!auth.currentUser) return;
     const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
     if (userDoc.exists()) {
       const data = userDoc.data();
+      const ogretmenUid = data.ogretmenUid || null;
       setKullanici({
         isim: data.isim || auth.currentUser.email,
         arkadaslar: data.arkadaslar || [],
@@ -95,15 +100,15 @@ function StudentDashboard() {
         gidenIstekler: data.gidenIstekler || [],
         engellenenler: data.engellenenler || [],
         okul: data.okul || "",
-        ogretmenUid: data.ogretmenUid || null,
+        ogretmenUid: ogretmenUid,
         ogretmenIsim: data.ogretmenIsim || ""
       });
       setKaranlikMod(data.karanlikMod || false);
       setArkaplanId(data.arkaplan || "varsayilan");
-      // Ogretmeni varsa paylasimlari getir
-      if (data.ogretmenUid) {
-        ogretmenGonderileriniGetir(data.ogretmenUid);
+      if (ogretmenUid) {
+        ogretmenGonderileriniGetir(ogretmenUid);
       }
+      gonderileriGetir(ogretmenUid);
     }
   };
 
@@ -150,7 +155,7 @@ function StudentDashboard() {
     return KUFUR_LISTESI.some(kufur => kucukMetin.includes(kufur));
   };
 
-  const gonderileriGetir = async () => {
+  const gonderileriGetir = async (ogretmenUid) => {
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
     const liste = snapshot.docs
@@ -159,7 +164,7 @@ function StudentDashboard() {
         !g.veliKaldirdi &&
         !g.ogretmenKaldirdi &&
         !g.adminSildi &&
-        g.yazarUid !== kullanici.ogretmenUid
+        (ogretmenUid ? g.yazarUid !== ogretmenUid : !g.ogretmenPostu)
       );
     setGonderiler(liste);
   };
@@ -227,7 +232,7 @@ function StudentDashboard() {
       adminSildi: false
     });
     setGonderi("");
-    await gonderileriGetir();
+    await gonderileriGetir(kullanici.ogretmenUid || null);
     setYukleniyor(false);
   };
 
@@ -440,7 +445,7 @@ function StudentDashboard() {
       <div style={{ maxWidth: "600px", margin: "0 auto", padding: "20px", fontFamily: "sans-serif" }}>
 
         {secilenProfil && (
-          <ProfilSayfasi kullaniciId={secilenProfil} onKapat={() => { setSecilenProfil(null); kullaniciBilgisiGetir(); gonderileriGetir(); }} mevcutKullaniciRol="student" />
+          <ProfilSayfasi kullaniciId={secilenProfil} onKapat={() => { setSecilenProfil(null); kullaniciBilgisiGetir(); }} mevcutKullaniciRol="student" />
         )}
 
         {bildirimModal && (
@@ -527,9 +532,8 @@ function StudentDashboard() {
               </span>
             )}
           </button>
-          {/* Ogretmen sekmesi - sadece ogretmeni atanmis ogrencilerde goster */}
-          {kullanici.ogretmenUid && (
-            <button onClick={ogretmenSekmeAc}
+          {/* Ogretmen sekmesi - her ogrencide goster */}
+          <button onClick={ogretmenSekmeAc}
               style={{ flex: 1, padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ogretmen" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
               🏫 Ogretmenim
               {gorulmemisOgretmenPost > 0 && (
@@ -538,7 +542,6 @@ function StudentDashboard() {
                 </span>
               )}
             </button>
-          )}
         </div>
 
         {aktifSekme === "arkadaslar" && kullanici.gelenIstekler.length > 0 && (
@@ -571,6 +574,11 @@ function StudentDashboard() {
         {/* Ogretmen sekmesi icerigi */}
         {aktifSekme === "ogretmen" && (
           <div>
+            {!kullanici.ogretmenUid && (
+              <div style={{ background: kartArkaplan, padding: "20px", borderRadius: "12px", textAlign: "center", color: kartIkincilYazi }}>
+                <p>Henuz bir ogretmen atanmamis.</p>
+              </div>
+            )}
             {kullanici.ogretmenIsim && (
               <div style={{ background: "#e0e7ff", padding: "10px 14px", borderRadius: "10px", marginBottom: "12px" }}>
                 <p style={{ margin: 0, fontSize: "13px", color: "#3730a3", fontWeight: "600" }}>
