@@ -103,6 +103,22 @@ function AdminDashboard() {
     alert("Kullanici onaylandi!");
   };
 
+  const ogretmenOlarakOnayla = async (kullaniciId) => {
+    if (!window.confirm("Ogretmen olarak onaylamak istediginizden emin misiniz?")) return;
+    await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true, role: "teacher" });
+    setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
+    setKullaniciler(prev => ({ ...prev, [kullaniciId]: { ...prev[kullaniciId], onaylandi: true, role: "teacher" } }));
+    alert("Ogretmen olarak onaylandi!");
+  };
+
+  const veliOlarakOnayla = async (kullaniciId) => {
+    if (!window.confirm("Veli olarak onaylamak istediginizden emin misiniz?")) return;
+    await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true, role: "parent" });
+    setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
+    setKullaniciler(prev => ({ ...prev, [kullaniciId]: { ...prev[kullaniciId], onaylandi: true, role: "parent" } }));
+    alert("Veli olarak onaylandi!");
+  };
+
   const kullaniciReddet = async (kullaniciId) => {
     if (!window.confirm("Bu kayit talebini reddetmek istediginizden emin misiniz?")) return;
     await updateDoc(doc(db, "users", kullaniciId), { reddedildi: true, reddedildiTarihi: serverTimestamp() });
@@ -407,8 +423,10 @@ function AdminDashboard() {
                   {k.sinif && <p style={{ margin:"0 0 4px", fontSize:"13px", color:"#6b7280" }}>📚 {k.sinif}</p>}
                   {k.okul && <p style={{ margin:"0 0 12px", fontSize:"13px", color:"#6b7280" }}>🏫 {k.okul}</p>}
                   <div style={{ display:"flex", gap:"8px" }}>
-                    <button onClick={() => kullaniciOnayla(k.id)} style={{ flex:1, padding:"8px", background:"#10b981", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px" }}>✓ Onayla</button>
-                    <button onClick={() => kullaniciReddet(k.id)} style={{ flex:1, padding:"8px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px" }}>✗ Reddet</button>
+                    <button onClick={() => kullaniciOnayla(k.id)} style={{ flex:1, padding:"8px", background:"#10b981", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>✓ Ogrenci</button>
+                    <button onClick={() => ogretmenOlarakOnayla(k.id)} style={{ flex:1, padding:"8px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>👩‍🏫 Ogretmen</button>
+                    <button onClick={() => veliOlarakOnayla(k.id)} style={{ flex:1, padding:"8px", background:"#f59e0b", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>👨‍👩‍👧 Veli</button>
+                    <button onClick={() => kullaniciReddet(k.id)} style={{ flex:1, padding:"8px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>✗ Reddet</button>
                   </div>
                 </div>
               ))}

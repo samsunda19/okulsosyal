@@ -53,7 +53,7 @@ const ARKAPLANLAR = {
 
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
-  const [gonderiler, setGonderiler] = useState([]);
+  const [gonderiler, setGonderiler] = useState(null);
   const [yukleniyor, setYukleniyor] = useState(false);
   const [kullanici, setKullanici] = useState({ isim: "", arkadaslar: [], gelenIstekler: [], gidenIstekler: [], engellenenler: [], okul: "", ogretmenUid: null, ogretmenIsim: "" });
   const [karanlikMod, setKaranlikMod] = useState(false);
@@ -74,6 +74,7 @@ function StudentDashboard() {
   // Ogretmen sekmesi
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [gorulmemisOgretmenPost, setGorulmemisOgretmenPost] = useState(0);
+  const [ogretmenUidListesi, setOgretmenUidListesi] = useState([]);
 
   useEffect(() => {
     ilkYukle();
@@ -82,13 +83,14 @@ function StudentDashboard() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ilkYukle = async () => {
-    await kullaniciBilgisiGetir();
-    ogrencileriGetir();
+    const ogretmenler = await ogrencileriGetir();
+    await kullaniciBilgisiGetir(ogretmenler);
     bildirimleriGetir();
   };
 
-  const kullaniciBilgisiGetir = async () => {
+  const kullaniciBilgisiGetir = async (ogretmenler) => {
     if (!auth.currentUser) return;
+    const _ogretmenler = ogretmenler || [];
     const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
     if (userDoc.exists()) {
       const data = userDoc.data();
@@ -108,7 +110,7 @@ function StudentDashboard() {
       if (ogretmenUid) {
         ogretmenGonderileriniGetir(ogretmenUid);
       }
-      gonderileriGetir(ogretmenUid);
+      gonderileriGetir(ogretmenUid, _ogretmenler);
     }
   };
 
@@ -136,10 +138,12 @@ function StudentDashboard() {
 
   const ogrencileriGetir = async () => {
     const snapshot = await getDocs(collection(db, "users"));
-    const ogrenciler = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(u => u.role === "student" && u.onaylandi !== false && u.id !== auth.currentUser.uid);
+    const tumKullanicilar = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const ogrenciler = tumKullanicilar.filter(u => u.role === "student" && u.onaylandi !== false && u.id !== auth.currentUser.uid);
+    const ogretmenler = tumKullanicilar.filter(u => u.role === "teacher").map(u => u.id);
     setTumOgrenciler(ogrenciler);
+    setOgretmenUidListesi(ogretmenler);
+    return ogretmenler;
   };
 
   const bildirimleriGetir = async () => {
@@ -155,7 +159,8 @@ function StudentDashboard() {
     return KUFUR_LISTESI.some(kufur => kucukMetin.includes(kufur));
   };
 
-  const gonderileriGetir = async (ogretmenUid) => {
+  const gonderileriGetir = async (ogretmenUid, ogretmenler) => {
+    const filtre = (ogretmenler && ogretmenler.length > 0) ? ogretmenler : ogretmenUidListesi;
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
     const liste = snapshot.docs
@@ -164,7 +169,7 @@ function StudentDashboard() {
         !g.veliKaldirdi &&
         !g.ogretmenKaldirdi &&
         !g.adminSildi &&
-        (ogretmenUid ? g.yazarUid !== ogretmenUid : !g.ogretmenPostu)
+        !filtre.includes(g.yazarUid)
       );
     setGonderiler(liste);
   };
@@ -319,7 +324,7 @@ function StudentDashboard() {
       })
     : [];
 
-  const filtrelenmisGonderiler = aktifSekme === "arkadaslar"
+  const filtrelenmisGonderiler = gonderiler === null ? [] : aktifSekme === "arkadaslar"
     ? gonderiler.filter(g => kullanici.arkadaslar.includes(g.yazarUid))
     : gonderiler.filter(g => !kullanici.engellenenler.includes(g.yazarUid));
 
@@ -574,11 +579,6 @@ function StudentDashboard() {
         {/* Ogretmen sekmesi icerigi */}
         {aktifSekme === "ogretmen" && (
           <div>
-            {!kullanici.ogretmenUid && (
-              <div style={{ background: kartArkaplan, padding: "20px", borderRadius: "12px", textAlign: "center", color: kartIkincilYazi }}>
-                <p>Henuz bir ogretmen atanmamis.</p>
-              </div>
-            )}
             {kullanici.ogretmenIsim && (
               <div style={{ background: "#e0e7ff", padding: "10px 14px", borderRadius: "10px", marginBottom: "12px" }}>
                 <p style={{ margin: 0, fontSize: "13px", color: "#3730a3", fontWeight: "600" }}>
@@ -604,7 +604,11 @@ function StudentDashboard() {
                 <p>Henuz arkadasin yok veya arkadaslarin paylasim yapmadi.</p>
               </div>
             )}
-            {filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" />)}
+            {gonderiler === null ? (
+              <div style={{ background: kartArkaplan, padding: "20px", borderRadius: "12px", textAlign: "center", color: kartIkincilYazi }}>
+                <p>Yukleniyor...</p>
+              </div>
+            ) : filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" />)}
           </div>
         )}
       </div>
