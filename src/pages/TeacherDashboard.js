@@ -48,7 +48,7 @@ function TeacherDashboard() {
     setOgretmenOkul(ogretmenData?.okul || "");
 
     // Ogretmenin kendi paylasimlarini getir
-    const postSnapshot = await getDocs(query(collection(db, "posts"), orderBy("tarih", "desc")));
+    const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
     const tumPosts = postSnapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(g => g.yazarUid === auth.currentUser.uid && !g.adminSildi);
@@ -83,21 +83,17 @@ function TeacherDashboard() {
       return;
     }
     setGonderiYukleniyor(true);
-    await addDoc(collection(db, "posts"), {
+    await addDoc(collection(db, "duyurular"), {
       icerik: yeniGonderi,
       yazar: ogretmenIsmi,
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp(),
       begenenler: [],
-      ogrenciSildi: false,
-      veliKaldirdi: false,
-      ogretmenKaldirdi: false,
-      adminSildi: false,
-      ogretmenPostu: true
+      adminSildi: false
     });
     setYeniGonderi("");
     // Listeyi guncelle
-    const postSnapshot = await getDocs(query(collection(db, "posts"), orderBy("tarih", "desc")));
+    const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
     const tumPosts = postSnapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(g => g.yazarUid === auth.currentUser.uid && !g.adminSildi);
@@ -107,7 +103,7 @@ function TeacherDashboard() {
 
   const gonderiSil = async (gonderiId) => {
     if (!window.confirm("Bu paylasimi silmek istediginizden emin misiniz?")) return;
-    await updateDoc(doc(db, "posts", gonderiId), {
+    await updateDoc(doc(db, "duyurular", gonderiId), {
       ogretmenKaldirdi: true,
       ogretmenKaldirmaTarihi: serverTimestamp(),
       ogretmenKaldiranUid: auth.currentUser.uid
@@ -197,7 +193,7 @@ function TeacherDashboard() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
           <h2 style={{ color: "#4f46e5", margin: "0 0 4px" }}>Ogretmen Paneli</h2>
-          <p onClick={() => setSecilenProfil(auth.currentUser.uid)} style={{ margin: 0, fontSize: "13px", color: "#4f46e5", cursor: "pointer", fontWeight: "600" }}>👤 {ogretmenIsmi} {ogretmenOkul && `• 🏫 ${ogretmenOkul}`}</p>
+          <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>👤 {ogretmenIsmi} {ogretmenOkul && `• 🏫 ${ogretmenOkul}`}</p>
         </div>
         <button onClick={() => signOut(auth)}
           style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>

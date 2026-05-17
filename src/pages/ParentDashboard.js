@@ -55,7 +55,7 @@ function ParentDashboard() {
 
     // Ogretmenin paylasimlarini getir
     if (cocukOgretmenUid) {
-      const postSnapshot = await getDocs(query(collection(db, "posts"), orderBy("tarih", "desc")));
+      const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
       const ogretmenPostlari = postSnapshot.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(g => g.yazarUid === cocukOgretmenUid && !g.adminSildi);

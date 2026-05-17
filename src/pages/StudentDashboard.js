@@ -53,7 +53,7 @@ const ARKAPLANLAR = {
 
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
-  const [gonderiler, setGonderiler] = useState(null);
+  const [gonderiler, setGonderiler] = useState([]);
   const [yukleniyor, setYukleniyor] = useState(false);
   const [kullanici, setKullanici] = useState({ isim: "", arkadaslar: [], gelenIstekler: [], gidenIstekler: [], engellenenler: [], okul: "", ogretmenUid: null, ogretmenIsim: "" });
   const [karanlikMod, setKaranlikMod] = useState(false);
@@ -115,7 +115,7 @@ function StudentDashboard() {
   };
 
   const ogretmenGonderileriniGetir = async (ogretmenUid) => {
-    const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
+    const q = query(collection(db, "duyurular"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
     const liste = snapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
@@ -143,7 +143,23 @@ function StudentDashboard() {
     const ogretmenler = tumKullanicilar.filter(u => u.role === "teacher").map(u => u.id);
     setTumOgrenciler(ogrenciler);
     setOgretmenUidListesi(ogretmenler);
+    // Ogretmen listesi kesin dolu, direkt gonderileri getir
+    await gonderileriGetirFiltreli(ogretmenler);
     return ogretmenler;
+  };
+
+  const gonderileriGetirFiltreli = async (ogretmenler) => {
+    const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
+    const snapshot = await getDocs(q);
+    const liste = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(g =>
+        !g.veliKaldirdi &&
+        !g.ogretmenKaldirdi &&
+        !g.adminSildi &&
+        !ogretmenler.includes(g.yazarUid)
+      );
+    setGonderiler(liste);
   };
 
   const bildirimleriGetir = async () => {
@@ -324,7 +340,7 @@ function StudentDashboard() {
       })
     : [];
 
-  const filtrelenmisGonderiler = gonderiler === null ? [] : aktifSekme === "arkadaslar"
+  const filtrelenmisGonderiler = aktifSekme === "arkadaslar"
     ? gonderiler.filter(g => kullanici.arkadaslar.includes(g.yazarUid))
     : gonderiler.filter(g => !kullanici.engellenenler.includes(g.yazarUid));
 
@@ -604,11 +620,7 @@ function StudentDashboard() {
                 <p>Henuz arkadasin yok veya arkadaslarin paylasim yapmadi.</p>
               </div>
             )}
-            {gonderiler === null ? (
-              <div style={{ background: kartArkaplan, padding: "20px", borderRadius: "12px", textAlign: "center", color: kartIkincilYazi }}>
-                <p>Yukleniyor...</p>
-              </div>
-            ) : filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" />)}
+            {filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" />)}
           </div>
         )}
       </div>
