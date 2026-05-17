@@ -137,7 +137,25 @@ function AdminDashboard() {
   const sinifKaydet = async () => {
     if (!secilenKullanici) return;
     setKaydetYukleniyor(true);
+    // Ogretmenin sinif arrayini guncelle
     await updateDoc(doc(db, "users", secilenKullanici.id), { sinif: secilenOgrenciler });
+    // Onceki siniftaki ogrencilerden ogretmeni kaldir
+    const eskiSinif = secilenKullanici.sinif || [];
+    for (const uid of eskiSinif) {
+      if (!secilenOgrenciler.includes(uid)) {
+        await updateDoc(doc(db, "users", uid), {
+          ogretmenUid: null,
+          ogretmenIsim: null
+        });
+      }
+    }
+    // Yeni ogrencilere ogretmeni yaz
+    for (const uid of secilenOgrenciler) {
+      await updateDoc(doc(db, "users", uid), {
+        ogretmenUid: secilenKullanici.id,
+        ogretmenIsim: secilenKullanici.isim
+      });
+    }
     const guncellenmis = { ...secilenKullanici, sinif: secilenOgrenciler };
     setSecilenKullanici(guncellenmis);
     setKullaniciler(prev => ({ ...prev, [secilenKullanici.id]: guncellenmis }));
