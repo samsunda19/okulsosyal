@@ -83,8 +83,8 @@ function StudentDashboard() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ilkYukle = async () => {
-    const ogretmenler = await ogrencileriGetir();
-    await kullaniciBilgisiGetir(ogretmenler);
+    await kullaniciBilgisiGetir([]);
+    ogrencileriGetir();
     bildirimleriGetir();
   };
 
