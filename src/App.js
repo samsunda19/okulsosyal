@@ -66,6 +66,7 @@ function KayitForm({ onKapat }) {
   const [basarili, setBasarili] = useState(false);
 
   const firestoreYaz = async (uid, deneme = 1) => {
+    await new Promise(r => setTimeout(r, 500));
     try {
       await setDoc(doc(db, "users", uid), {
         email: email,
