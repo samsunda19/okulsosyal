@@ -74,7 +74,6 @@ function StudentDashboard() {
   // Ogretmen sekmesi
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [gorulmemisOgretmenPost, setGorulmemisOgretmenPost] = useState(0);
-  const [ogretmenUidListesi, setOgretmenUidListesi] = useState([]);
 
   useEffect(() => {
     ilkYukle();
@@ -83,14 +82,13 @@ function StudentDashboard() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ilkYukle = async () => {
-    await kullaniciBilgisiGetir([]);
+    await kullaniciBilgisiGetir();
     ogrencileriGetir();
     bildirimleriGetir();
   };
 
-  const kullaniciBilgisiGetir = async (ogretmenler) => {
+  const kullaniciBilgisiGetir = async () => {
     if (!auth.currentUser) return;
-    const _ogretmenler = ogretmenler || [];
     const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
     if (userDoc.exists()) {
       const data = userDoc.data();
@@ -110,7 +108,7 @@ function StudentDashboard() {
       if (ogretmenUid) {
         ogretmenGonderileriniGetir(ogretmenUid);
       }
-      gonderileriGetir();
+      gonderileriGetir(ogretmenUid, _ogretmenler);
     }
   };
 
@@ -140,25 +138,12 @@ function StudentDashboard() {
     const snapshot = await getDocs(collection(db, "users"));
     const tumKullanicilar = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     const ogrenciler = tumKullanicilar.filter(u => u.role === "student" && u.onaylandi !== false && u.id !== auth.currentUser.uid);
-    const ogretmenler = tumKullanicilar.filter(u => u.role === "teacher").map(u => u.id);
     setTumOgrenciler(ogrenciler);
-    setOgretmenUidListesi(ogretmenler);
+    // Ogretmen listesi kesin dolu, direkt gonderileri getir
+    await gonderileriGetirFiltreli(ogretmenler);
     return ogretmenler;
   };
 
-  const gonderileriGetirFiltreli = async (ogretmenler) => {
-    const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
-    const snapshot = await getDocs(q);
-    const liste = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g =>
-        !g.veliKaldirdi &&
-        !g.ogretmenKaldirdi &&
-        !g.adminSildi &&
-        !ogretmenler.includes(g.yazarUid)
-      );
-    setGonderiler(liste);
-  };
 
   const bildirimleriGetir = async () => {
     const snapshot = await getDocs(collection(db, "reports"));
@@ -173,7 +158,8 @@ function StudentDashboard() {
     return KUFUR_LISTESI.some(kufur => kucukMetin.includes(kufur));
   };
 
-  const gonderileriGetir = async () => {
+  const gonderileriGetir = async (ogretmenUid, ogretmenler) => {
+    const filtre = (ogretmenler && ogretmenler.length > 0) ? ogretmenler : ogretmenUidListesi;
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
     const liste = snapshot.docs
@@ -181,7 +167,8 @@ function StudentDashboard() {
       .filter(g =>
         !g.veliKaldirdi &&
         !g.ogretmenKaldirdi &&
-        !g.adminSildi
+        !g.adminSildi &&
+        !filtre.includes(g.yazarUid)
       );
     setGonderiler(liste);
   };
@@ -249,7 +236,7 @@ function StudentDashboard() {
       adminSildi: false
     });
     setGonderi("");
-    await gonderileriGetir();
+    await gonderileriGetir(kullanici.ogretmenUid || null);
     setYukleniyor(false);
   };
 
