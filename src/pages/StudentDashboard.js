@@ -110,7 +110,7 @@ function StudentDashboard() {
       if (ogretmenUid) {
         ogretmenGonderileriniGetir(ogretmenUid);
       }
-      gonderileriGetir(ogretmenUid, _ogretmenler);
+      gonderileriGetir();
     }
   };
 
@@ -143,8 +143,6 @@ function StudentDashboard() {
     const ogretmenler = tumKullanicilar.filter(u => u.role === "teacher").map(u => u.id);
     setTumOgrenciler(ogrenciler);
     setOgretmenUidListesi(ogretmenler);
-    // Ogretmen listesi kesin dolu, direkt gonderileri getir
-    await gonderileriGetirFiltreli(ogretmenler);
     return ogretmenler;
   };
 
@@ -175,8 +173,7 @@ function StudentDashboard() {
     return KUFUR_LISTESI.some(kufur => kucukMetin.includes(kufur));
   };
 
-  const gonderileriGetir = async (ogretmenUid, ogretmenler) => {
-    const filtre = (ogretmenler && ogretmenler.length > 0) ? ogretmenler : ogretmenUidListesi;
+  const gonderileriGetir = async () => {
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
     const liste = snapshot.docs
@@ -184,8 +181,7 @@ function StudentDashboard() {
       .filter(g =>
         !g.veliKaldirdi &&
         !g.ogretmenKaldirdi &&
-        !g.adminSildi &&
-        !filtre.includes(g.yazarUid)
+        !g.adminSildi
       );
     setGonderiler(liste);
   };
@@ -253,7 +249,7 @@ function StudentDashboard() {
       adminSildi: false
     });
     setGonderi("");
-    await gonderileriGetir(kullanici.ogretmenUid || null);
+    await gonderileriGetir();
     setYukleniyor(false);
   };
 
