@@ -42,7 +42,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       setArkadasBilgileri([]);
       setOkunmamisToplam(0);
     }
-  }, [arkadaslar]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [arkadaslar]);
 
   useEffect(() => {
     if (aktifKonusma) {
@@ -50,7 +50,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       const interval = setInterval(mesajlariGetir, 2000);
       return () => clearInterval(interval);
     }
-  }, [aktifKonusma]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [aktifKonusma]);
 
   const arkadasBilgileriniGetir = async () => {
     const bilgiler = [];
@@ -65,6 +65,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
 
   const okunmamisSayilariGetir = async () => {
     if (!arkadaslar || arkadaslar.length === 0) return;
+    if (!auth.currentUser) return;
     let toplam = 0;
     const harita = {};
     for (const uid of arkadaslar) {
@@ -88,6 +89,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
 
   const mesajlariGetir = async () => {
     if (!aktifKonusma) return;
+    if (!auth.currentUser) return;
     const kId = konusmaId(auth.currentUser.uid, aktifKonusma.id);
     const q = query(collection(db, "messages", kId, "mesajlar"), orderBy("tarih", "asc"));
     const snapshot = await getDocs(q);

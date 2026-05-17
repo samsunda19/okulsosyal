@@ -141,8 +141,7 @@ function StudentDashboard() {
     const snapshot = await getDocs(q);
     // Soft delete - silinen yorumlar gizlenir
     const liste = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(y => !y.silindi);
+      .map(d => ({ id: d.id, ...d.data() }));
     setYorumlar(prev => ({ ...prev, [postId]: liste }));
   };
 
@@ -621,8 +620,12 @@ function StudentDashboard() {
                     {yorumlar[g.id] && yorumlar[g.id].map(y => {
                       const benimYorumum = y.yazarUid === auth.currentUser.uid;
                       return (
-                        <div key={y.id} style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding:"10px", borderRadius:"8px", marginBottom:"6px", position:"relative" }}>
-                          <p style={{ margin:"0 0 4px", fontSize:"14px", paddingRight:"60px", color: kartYazi }}>{y.icerik}</p>
+                        <div key={y.id} style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding:"10px", borderRadius:"8px", marginBottom:"6px", position:"relative", opacity: y.silindi ? 0.6 : 1 }}>
+                          {y.silindi ? (
+                            <p style={{ margin:"0 0 4px", fontSize:"13px", fontStyle:"italic", color: kartIkincilYazi }}>🗑️ Bu yorum kaldirildi.</p>
+                          ) : (
+                            <p style={{ margin:"0 0 4px", fontSize:"14px", paddingRight:"60px", color: kartYazi }}>{y.icerik}</p>
+                          )}
                           <small
                             onClick={() => setSecilenProfil(y.yazarUid)}
                             style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline", fontSize:"12px" }}>
@@ -635,7 +638,7 @@ function StudentDashboard() {
                                 🚩
                               </button>
                             )}
-                            {benimYorumum && (
+                            {benimYorumum && !y.silindi && (
                               <button onClick={() => yorumSil(g.id, y.id)}
                                 style={{ padding:"2px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"5px", cursor:"pointer", fontSize:"11px" }}>
                                 Sil
