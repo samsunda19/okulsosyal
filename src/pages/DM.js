@@ -42,7 +42,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       setArkadasBilgileri([]);
       setOkunmamisToplam(0);
     }
-  }, [arkadaslar]);
+  }, [arkadaslar]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (aktifKonusma) {
@@ -50,7 +50,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       const interval = setInterval(mesajlariGetir, 2000);
       return () => clearInterval(interval);
     }
-  }, [aktifKonusma]);
+  }, [aktifKonusma]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const arkadasBilgileriniGetir = async () => {
     const bilgiler = [];
