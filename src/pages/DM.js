@@ -73,12 +73,12 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
       try {
         const q = query(
           collection(db, "messages", kId, "mesajlar"),
-          where("aliciUid", "==", auth.currentUser.uid),
           where("okundu", "==", false)
         );
         const snapshot = await getDocs(q);
-        harita[uid] = snapshot.size;
-        toplam += snapshot.size;
+        const okunmamis = snapshot.docs.filter(d => d.data().aliciUid === auth.currentUser.uid);
+        harita[uid] = okunmamis.length;
+        toplam += okunmamis.length;
       } catch (e) {
         harita[uid] = 0;
       }
