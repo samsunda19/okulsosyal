@@ -158,7 +158,7 @@ const GonderiKarti = React.memo(({
               💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
             </button>
           )}
-          {!benimPaylasimim && !bildirdimMi && (
+          {!benimPaylasimim && !bildirdimMi && !ogretmenPostu && (
             <button onClick={() => onBildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar, g.fotoUrl)}
               style={{ padding: "4px 10px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
               🚩
@@ -293,15 +293,20 @@ function StudentDashboard() {
       .filter(g => g.yazarUid === ogretmenUid && !g.adminSildi);
     setOgretmenGonderiler(liste);
     const gorulmusKey = "ogretmenPostGorulmus_" + auth.currentUser.uid;
-    const gorulmusZaman = parseInt(localStorage.getItem(gorulmusKey) || "0");
-    const yeni = liste.filter(g => g.tarih && g.tarih.seconds * 1000 > gorulmusZaman);
+    const gorulmusKey2 = "ogretmenGorulmusIds_" + auth.currentUser.uid;
+    const gorulmusIds = JSON.parse(localStorage.getItem(gorulmusKey2) || "[]");
+    const yeni = liste.filter(g => !gorulmusIds.includes(g.id));
     setGorulmemisOgretmenPost(yeni.length);
   };
 
   const ogretmenSekmeAc = () => {
     setAktifSekme("ogretmen");
     const gorulmusKey = "ogretmenPostGorulmus_" + auth.currentUser.uid;
-    localStorage.setItem(gorulmusKey, Date.now().toString());
+    const gorulmusKey2 = "ogretmenGorulmusIds_" + auth.currentUser.uid;
+    const mevcutIds = JSON.parse(localStorage.getItem(gorulmusKey2) || "[]");
+    const tumIds = ogretmenGonderiler.map(g => g.id);
+    const yeniIds = [...new Set([...mevcutIds, ...tumIds])];
+    localStorage.setItem(gorulmusKey2, JSON.stringify(yeniIds));
     setGorulmemisOgretmenPost(0);
   };
 
@@ -336,7 +341,7 @@ function StudentDashboard() {
     const snapshot = await getDocs(q);
     const liste = snapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g => !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
+      .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
     setGonderiler(liste);
   };
 
