@@ -37,6 +37,13 @@ function ParentDashboard() {
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [ogretmenIsim, setOgretmenIsim] = useState("");
   const [ogretmenUid, setOgretmenUid] = useState(null);
+  const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("parentKaranlikMod") === "true");
+
+  const bg = karanlikMod ? "#111827" : "#f9fafb";
+  const kartBg = karanlikMod ? "#1f2937" : "white";
+  const yaziRenk = karanlikMod ? "#f3f4f6" : "#111827";
+  const ikincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
+  const borderRenk = karanlikMod ? "#374151" : "#e5e7eb";
 
   useEffect(() => {
     verileriGetir();
@@ -192,6 +199,7 @@ function ParentDashboard() {
   const yeniBildirimSayisi = bildirimler.filter(b => !b.veliGordu).length;
 
   return (
+    <div style={{ minHeight: "100vh", background: bg, transition: "background 0.2s" }}>
     <div style={{ maxWidth: "650px", margin: "0 auto", padding: "20px", fontFamily: "sans-serif" }}>
 
       {secilenProfil && (
@@ -203,10 +211,20 @@ function ParentDashboard() {
           <h2 style={{ color: "#4f46e5", margin: "0 0 4px" }}>Veli Paneli</h2>
           <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>👤 {veliIsmi}</p>
         </div>
-        <button onClick={() => signOut(auth)}
-          style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>
-          Cikis
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "12px", color: ikincilYazi }}>☀️</span>
+            <div onClick={() => { const yeni = !karanlikMod; setKaranlikMod(yeni); localStorage.setItem("parentKaranlikMod", yeni); }}
+              style={{ width: "36px", height: "20px", borderRadius: "10px", background: karanlikMod ? "#4f46e5" : "#d1d5db", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+              <div style={{ width: "16px", height: "16px", borderRadius: "50%", background: "white", position: "absolute", top: "2px", left: karanlikMod ? "18px" : "2px", transition: "left 0.2s" }} />
+            </div>
+            <span style={{ fontSize: "12px", color: ikincilYazi }}>🌙</span>
+          </div>
+          <button onClick={() => signOut(auth)}
+            style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>
+            Cikis
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
@@ -417,6 +435,7 @@ function ParentDashboard() {
           </div>
         )
       )}
+    </div>
     </div>
   );
 }

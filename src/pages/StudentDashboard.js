@@ -120,7 +120,15 @@ const GonderiKarti = React.memo(({
         <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: kartIkincilYazi, fontStyle: "italic" }}>🗑️ Bu gonderi kaldirildi.</p>
       ) : (
         <>
-          {g.icerik && <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>{g.icerik}</p>}
+          {g.icerik && (
+            <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>
+              {ogretmenPostu ? g.icerik.split(/(\bhttps?:\/\/\S+)/g).map((parca, i) =>
+                parca.match(/^https?:\/\//) ? (
+                  <a key={i} href={parca} target="_blank" rel="noopener noreferrer" style={{ color: "#4f46e5", textDecoration: "underline" }}>{parca}</a>
+                ) : parca
+              ) : g.icerik}
+            </p>
+          )}
           {g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
         </>
       )}
@@ -460,6 +468,11 @@ function StudentDashboard() {
     if (!gonderi.trim() && !secilenMedya) return;
     if (gonderi.trim() && kufurKontrol(gonderi)) {
       setHataMesaj("⚠️ Paylasimda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
+      setTimeout(() => setHataMesaj(""), 4000);
+      return;
+    }
+    if (gonderi.trim() && /https?:\/\/\S+/.test(gonderi)) {
+      setHataMesaj("⚠️ Paylasimda link paylasilamaz!");
       setTimeout(() => setHataMesaj(""), 4000);
       return;
     }
