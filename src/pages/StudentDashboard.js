@@ -78,7 +78,16 @@ const MedyaGoster = React.memo(({ url }) => {
       src={url}
       alt="gonderi"
       style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", cursor: "pointer" }}
-      onClick={() => window.open(url, "_blank")}
+      onClick={() => {
+        const overlay = document.createElement("div");
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer";
+        const img = document.createElement("img");
+        img.src = url;
+        img.style.cssText = "max-width:90%;max-height:90vh;border-radius:12px;object-fit:contain";
+        overlay.appendChild(img);
+        overlay.onclick = () => document.body.removeChild(overlay);
+        document.body.appendChild(overlay);
+      }}
     />
   );
 });
@@ -634,7 +643,16 @@ function StudentDashboard() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", background: karanlikMod ? "rgba(31,41,55,0.9)" : "rgba(255,255,255,0.9)", padding: "12px 16px", borderRadius: "12px" }}>
           <h2 style={{ color: "#4f46e5", margin: 0 }}>Ogrenci Paneli</h2>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span onClick={() => setSecilenProfil(auth.currentUser.uid)} style={{ fontSize: "14px", color: "#4f46e5", cursor: "pointer", fontWeight: "600" }}>👤 {kullanici.isim}</span>
+            <span onClick={() => setSecilenProfil(auth.currentUser.uid)} style={{ fontSize: "14px", color: "#4f46e5", cursor: "pointer", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
+              {kullaniciFotolari[auth.currentUser.uid] ? (
+                <img src={kullaniciFotolari[auth.currentUser.uid]} alt="" style={{ width: "28px", height: "28px", borderRadius: "50%", objectFit: "cover", border: "2px solid #4f46e5" }} />
+              ) : (
+                <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "white", fontWeight: "700" }}>
+                  {(kullanici.isim || "?")[0].toUpperCase()}
+                </div>
+              )}
+              {kullanici.isim}
+            </span>
             <button onClick={() => signOut(auth)} style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>Cikis</button>
           </div>
         </div>
