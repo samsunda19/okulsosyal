@@ -4,6 +4,23 @@ import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTime
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 
+const MedyaGoster = ({ url }) => {
+  if (!url) return null;
+  if (url.includes("cloudflarestream.com")) {
+    const embedUrl = url.includes("/iframe") ? url : url.replace("/manifest/video.m3u8", "/iframe");
+    return (
+      <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, marginTop: "8px", borderRadius: "8px", overflow: "hidden" }}>
+        <iframe src={embedUrl} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
+          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowFullScreen title="video" />
+      </div>
+    );
+  }
+  return (
+    <img src={url} alt="gonderi" style={{ maxWidth: "100%", borderRadius: "8px", marginTop: "8px", cursor: "pointer" }}
+      onClick={() => window.open(url, "_blank")} />
+  );
+};
+
 function ParentDashboard() {
   const [tumGonderiler, setTumGonderiler] = useState([]);
   const [cocuklar, setCocuklar] = useState([]);
@@ -17,7 +34,6 @@ function ParentDashboard() {
   const [aktifSekme, setAktifSekme] = useState("etkilesimler");
   const [acikIcerik, setAcikIcerik] = useState({});
   const [postDetay, setPostDetay] = useState({});
-  // Ogretmen sekmesi
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [ogretmenIsim, setOgretmenIsim] = useState("");
   const [ogretmenUid, setOgretmenUid] = useState(null);
@@ -42,7 +58,6 @@ function ParentDashboard() {
       if (cocukDoc.exists()) {
         const cocukData = cocukDoc.data();
         cocukBilgi[uid] = { id: uid, ...cocukData };
-        // Cocugun ogretmenini al
         if (cocukData.ogretmenUid && !cocukOgretmenUid) {
           cocukOgretmenUid = cocukData.ogretmenUid;
           cocukOgretmenIsim = cocukData.ogretmenIsim || "";
@@ -53,7 +68,6 @@ function ParentDashboard() {
     setOgretmenUid(cocukOgretmenUid);
     setOgretmenIsim(cocukOgretmenIsim);
 
-    // Ogretmenin paylasimlarini getir
     if (cocukOgretmenUid) {
       const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
       const ogretmenPostlari = postSnapshot.docs
@@ -296,6 +310,12 @@ function ParentDashboard() {
                 {acikIcerik[b.id] && postDetay[b.postId] && (
                   <div style={{ background: "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
                     <p style={{ margin: 0 }}>{postDetay[b.postId].icerik}</p>
+                    <MedyaGoster url={postDetay[b.postId].fotoUrl} />
+                    {postDetay[b.postId].tarih && (
+                      <small style={{ color: "#6b7280", fontSize: "11px" }}>
+                        📅 Paylasim tarihi: {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                      </small>
+                    )}
                   </div>
                 )}
                 <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 8px" }}>
@@ -326,7 +346,6 @@ function ParentDashboard() {
           )}
         </div>
       ) : (
-        // Etkilesimler sekmesi
         tumGonderiler.length === 0 ? (
           <div style={{ background: "white", padding: "20px", borderRadius: "12px", textAlign: "center", color: "#888" }}>
             <p>Cocugunuzun hic etkilesimi yok.</p>
@@ -356,8 +375,9 @@ function ParentDashboard() {
                       {g.ogretmenKaldirdi && <span style={{ background: "#fee2e2", color: "#991b1b", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Ogretmen kaldirdi</span>}
                     </div>
                   )}
-                  <p style={{ margin: "0 0 8px 0", fontSize: "15px" }}>{g.icerik}</p>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  {!kaldirildi && <p style={{ margin: "0 0 8px 0", fontSize: "15px" }}>{g.icerik}</p>}
+                  {!kaldirildi && g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       <small onClick={() => setSecilenProfil(g.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "13px" }}>{g.yazar}</small>
                       {yazarCocuk?.dondurulmus && <span style={{ background: "#fee2e2", color: "#ef4444", padding: "2px 6px", borderRadius: "8px", fontSize: "11px" }}>🔒 Dondurulmus</span>}

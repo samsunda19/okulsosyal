@@ -130,6 +130,11 @@ const GonderiKarti = React.memo(({
           <small style={{ color: "#4f46e5", textDecoration: "underline" }}>
             {g.yazar}{kullaniciArkadaslar.includes(g.yazarUid) && " 👥"}
           </small>
+          {g.tarih && (
+            <small style={{ color: kartIkincilYazi, fontSize: "11px" }}>
+              {new Date(g.tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(g.tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+            </small>
+          )}
         </div>
         <div style={{ display: "flex", gap: "6px" }}>
           {!kaldirildi && (
@@ -145,7 +150,7 @@ const GonderiKarti = React.memo(({
             </button>
           )}
           {!benimPaylasimim && !bildirdimMi && (
-            <button onClick={() => onBildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
+            <button onClick={() => onBildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar, g.fotoUrl)}
               style={{ padding: "4px 10px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
               🚩
             </button>
@@ -483,8 +488,8 @@ function StudentDashboard() {
     else setGonderiler(prev => guncelle(prev));
   }, []);
 
-  const bildirimBaslat = useCallback((tip, icerikId, postId, icerikMetni, yazarUid, yazar) => {
-    setBildirimModal({ tip, icerikId, postId, icerikMetni, yazarUid, yazar });
+  const bildirimBaslat = useCallback((tip, icerikId, postId, icerikMetni, yazarUid, yazar, fotoUrl) => {
+    setBildirimModal({ tip, icerikId, postId, icerikMetni, yazarUid, yazar, fotoUrl });
     setBildirimAdimi(1);
     setSecilenKategori(null);
     setDigerSebep("");
@@ -500,6 +505,7 @@ function StudentDashboard() {
       icerikId: bildirimModal.icerikId,
       postId: bildirimModal.postId,
       icerikMetni: bildirimModal.icerikMetni,
+      fotoUrl: bildirimModal.fotoUrl || null,
       yazarUid: bildirimModal.yazarUid,
       yazar: bildirimModal.yazar,
       bildirenUid: auth.currentUser.uid,
@@ -649,6 +655,12 @@ function StudentDashboard() {
                   {kullanici.arkadaslar.includes(k.id) && <span style={{ background: "#d1fae5", color: "#065f46", padding: "2px 6px", borderRadius: "4px", fontSize: "10px" }}>Arkadas</span>}
                   {kullanici.gidenIstekler.includes(k.id) && <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: "4px", fontSize: "10px" }}>Istek gonderildi</span>}
                   {kullanici.gelenIstekler.includes(k.id) && <span style={{ background: "#dbeafe", color: "#1e40af", padding: "2px 6px", borderRadius: "4px", fontSize: "10px" }}>Istegi var</span>}
+                  {!kullanici.arkadaslar.includes(k.id) && !kullanici.gidenIstekler.includes(k.id) && !kullanici.gelenIstekler.includes(k.id) && k.okul && kullanici.okul && k.okul.trim().toLowerCase() === kullanici.okul.trim().toLowerCase() && (
+                    <button onClick={async (e) => { e.stopPropagation(); await updateDoc(doc(db, "users", k.id), { gelenIstekler: arrayUnion(auth.currentUser.uid) }); await updateDoc(doc(db, "users", auth.currentUser.uid), { gidenIstekler: arrayUnion(k.id) }); setKullanici(prev => ({ ...prev, gidenIstekler: [...prev.gidenIstekler, k.id] })); }}
+                      style={{ background: "#4f46e5", color: "white", padding: "2px 8px", borderRadius: "4px", fontSize: "10px", border: "none", cursor: "pointer", fontWeight: "600" }}>
+                      + Ekle
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -687,9 +699,20 @@ function StudentDashboard() {
               const istekciKisi = tumOgrenciler.find(o => o.id === uid);
               if (!istekciKisi) return null;
               return (
-                <div key={uid} onClick={() => setSecilenProfil(uid)}
-                  style={{ padding: "8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius: "8px", marginBottom: "4px", cursor: "pointer" }}>
-                  <p style={{ margin: "0", fontSize: "13px", fontWeight: "600", color: kartYazi }}>👋 {istekciKisi.isim} sana arkadaslik istegi gonderdi</p>
+                <div key={uid} style={{ padding: "8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius: "8px", marginBottom: "4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <p onClick={() => setSecilenProfil(uid)} style={{ margin: "0", fontSize: "13px", fontWeight: "600", color: kartYazi, cursor: "pointer" }}>👋 {istekciKisi.isim}</p>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button onClick={async () => {
+                      await updateDoc(doc(db, "users", auth.currentUser.uid), { gelenIstekler: arrayRemove(uid), arkadaslar: arrayUnion(uid) });
+                      await updateDoc(doc(db, "users", uid), { gidenIstekler: arrayRemove(auth.currentUser.uid), arkadaslar: arrayUnion(auth.currentUser.uid) });
+                      setKullanici(prev => ({ ...prev, gelenIstekler: prev.gelenIstekler.filter(u => u !== uid), arkadaslar: [...prev.arkadaslar, uid] }));
+                    }} style={{ padding: "3px 10px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: "600" }}>✓ Kabul</button>
+                    <button onClick={async () => {
+                      await updateDoc(doc(db, "users", auth.currentUser.uid), { gelenIstekler: arrayRemove(uid) });
+                      await updateDoc(doc(db, "users", uid), { gidenIstekler: arrayRemove(auth.currentUser.uid) });
+                      setKullanici(prev => ({ ...prev, gelenIstekler: prev.gelenIstekler.filter(u => u !== uid) }));
+                    }} style={{ padding: "3px 10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: "600" }}>✕ Reddet</button>
+                  </div>
                 </div>
               );
             })}

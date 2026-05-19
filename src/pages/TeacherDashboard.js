@@ -12,6 +12,23 @@ const KUFUR_LISTESI = [
   "salak", "aptal", "gerizekali", "fuck", "fucking", "shit", "bitch", "asshole", "bastard"
 ];
 
+const MedyaGoster = ({ url }) => {
+  if (!url) return null;
+  if (url.includes("cloudflarestream.com")) {
+    const embedUrl = url.includes("/iframe") ? url : url.replace("/manifest/video.m3u8", "/iframe");
+    return (
+      <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, marginTop: "8px", borderRadius: "8px", overflow: "hidden" }}>
+        <iframe src={embedUrl} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
+          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowFullScreen title="video" />
+      </div>
+    );
+  }
+  return (
+    <img src={url} alt="gonderi" style={{ maxWidth: "100%", borderRadius: "8px", marginTop: "8px", cursor: "pointer" }}
+      onClick={() => window.open(url, "_blank")} />
+  );
+};
+
 function TeacherDashboard() {
   const [ogrenciler, setOgrenciler] = useState([]);
   const [bildirimler, setBildirimler] = useState([]);
@@ -22,13 +39,11 @@ function TeacherDashboard() {
   const [aktifSekme, setAktifSekme] = useState("paylasimlar");
   const [acikIcerik, setAcikIcerik] = useState({});
   const [postDetay, setPostDetay] = useState({});
-  // Sinifim panel
   const [tumOgrenciler, setTumOgrenciler] = useState([]);
   const [secilenOgrenciler, setSecilenOgrenciler] = useState([]);
   const [sinifAcik, setSinifAcik] = useState(false);
   const [sinifArama, setSinifArama] = useState("");
   const [sinifKaydetYukleniyor, setSinifKaydetYukleniyor] = useState(false);
-  // Ogretmen paylasimlar
   const [gonderiler, setGonderiler] = useState([]);
   const [yeniGonderi, setYeniGonderi] = useState("");
   const [gonderiYukleniyor, setGonderiYukleniyor] = useState(false);
@@ -47,14 +62,12 @@ function TeacherDashboard() {
     setOgretmenIsmi(ogretmenData?.isim || auth.currentUser.email);
     setOgretmenOkul(ogretmenData?.okul || "");
 
-    // Ogretmenin kendi paylasimlarini getir
     const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
     const tumPosts = postSnapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(g => g.yazarUid === auth.currentUser.uid && !g.adminSildi);
     setGonderiler(tumPosts);
 
-    // Tum onaylanmis ogrenciler - sinif yonetimi icin
     const userSnapshot = await getDocs(collection(db, "users"));
     const hepsi = userSnapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
@@ -92,7 +105,6 @@ function TeacherDashboard() {
       adminSildi: false
     });
     setYeniGonderi("");
-    // Listeyi guncelle
     const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
     const tumPosts = postSnapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
@@ -173,7 +185,6 @@ function TeacherDashboard() {
     }
   };
 
-  // Okul filtreli + arama filtreli ogrenci listesi
   const filtrelenmisOgrenciler = tumOgrenciler.filter(o => {
     const ayniOkul = !ogretmenOkul || (o.okul || "").trim().toLowerCase() === ogretmenOkul.trim().toLowerCase();
     const aramaUyumu = !sinifArama || (o.isim || "").toLowerCase().includes(sinifArama.toLowerCase());
@@ -201,7 +212,6 @@ function TeacherDashboard() {
         </button>
       </div>
 
-      {/* Sinifim acilir panel */}
       <div style={{ marginBottom: "16px" }}>
         <button onClick={() => setSinifAcik(!sinifAcik)}
           style={{ width: "100%", padding: "12px 16px", background: "white", border: "1px solid #e5e7eb", borderRadius: sinifAcik ? "12px 12px 0 0" : "12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
@@ -261,7 +271,6 @@ function TeacherDashboard() {
         )}
       </div>
 
-      {/* Sekmeler */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
         <button onClick={() => setAktifSekme("paylasimlar")}
           style={{ flex: 1, padding: "10px", background: aktifSekme === "paylasimlar" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "paylasimlar" ? "white" : "#374151", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
@@ -280,7 +289,6 @@ function TeacherDashboard() {
 
       {yukleniyor ? <p>Yukleniyor...</p> : aktifSekme === "paylasimlar" ? (
         <div>
-          {/* Paylasim kutusu */}
           <div style={{ background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
             <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 8px" }}>
               📋 Sinifina duyuru veya bilgi paylas ({ogrenciler.length} ogrenci gorecek)
@@ -294,7 +302,6 @@ function TeacherDashboard() {
             </button>
           </div>
 
-          {/* Ogretmenin paylasimlar listesi */}
           {gonderiler.length === 0 ? (
             <div style={{ background: "white", padding: "20px", borderRadius: "12px", textAlign: "center", color: "#888" }}>
               <p>Henuz paylasim yapmadınız.</p>
@@ -328,7 +335,6 @@ function TeacherDashboard() {
           )}
         </div>
       ) : (
-        // Bildirimler sekmesi
         <div>
           {bildirimler.length === 0 ? (
             <div style={{ background: "white", padding: "20px", borderRadius: "12px", textAlign: "center", color: "#888" }}>
@@ -372,6 +378,12 @@ function TeacherDashboard() {
                 {acikIcerik[b.id] && postDetay[b.postId] && (
                   <div style={{ background: "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
                     <p style={{ margin: 0 }}>{postDetay[b.postId].icerik}</p>
+                    <MedyaGoster url={postDetay[b.postId].fotoUrl} />
+                    {postDetay[b.postId].tarih && (
+                      <small style={{ color: "#6b7280", fontSize: "11px" }}>
+                        📅 Paylasim tarihi: {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+                      </small>
+                    )}
                   </div>
                 )}
                 <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 8px" }}>

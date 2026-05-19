@@ -4,6 +4,23 @@ import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp } 
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 
+const MedyaGoster = ({ url }) => {
+  if (!url) return null;
+  if (url.includes("cloudflarestream.com")) {
+    const embedUrl = url.includes("/iframe") ? url : url.replace("/manifest/video.m3u8", "/iframe");
+    return (
+      <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, marginTop: "8px", borderRadius: "8px", overflow: "hidden" }}>
+        <iframe src={embedUrl} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
+          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowFullScreen title="video" />
+      </div>
+    );
+  }
+  return (
+    <img src={url} alt="gonderi" style={{ maxWidth: "100%", borderRadius: "8px", marginTop: "8px", cursor: "pointer" }}
+      onClick={() => window.open(url, "_blank")} />
+  );
+};
+
 function AdminDashboard() {
   const [gonderiler, setGonderiler] = useState([]);
   const [kullaniciler, setKullaniciler] = useState({});
@@ -21,6 +38,14 @@ function AdminDashboard() {
   const [secilenOgrenciler, setSecilenOgrenciler] = useState([]);
   const [secilenCocuk, setSecilenCocuk] = useState("");
   const [kaydetYukleniyor, setKaydetYukleniyor] = useState(false);
+  const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("adminKaranlikMod") === "true");
+
+  const bg = karanlikMod ? "#111827" : "#f9fafb";
+  const kartBg = karanlikMod ? "#1f2937" : "white";
+  const yaziRenk = karanlikMod ? "#f3f4f6" : "#111827";
+  const ikincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
+  const inputBg = karanlikMod ? "#374151" : "white";
+  const borderRenk = karanlikMod ? "#374151" : "#e5e7eb";
 
   useEffect(() => {
     verileriGetir();
@@ -48,7 +73,6 @@ function AdminDashboard() {
     const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
     const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     setBildirimler(tumReports.filter(r => r.adminaIletti === true));
-
     setYukleniyor(false);
   };
 
@@ -153,19 +177,13 @@ function AdminDashboard() {
   const sinifKaydet = async () => {
     if (!secilenKullanici) return;
     setKaydetYukleniyor(true);
-    // Ogretmenin sinif arrayini guncelle
     await updateDoc(doc(db, "users", secilenKullanici.id), { sinif: secilenOgrenciler });
-    // Onceki siniftaki ogrencilerden ogretmeni kaldir
     const eskiSinif = secilenKullanici.sinif || [];
     for (const uid of eskiSinif) {
       if (!secilenOgrenciler.includes(uid)) {
-        await updateDoc(doc(db, "users", uid), {
-          ogretmenUid: null,
-          ogretmenIsim: null
-        });
+        await updateDoc(doc(db, "users", uid), { ogretmenUid: null, ogretmenIsim: null });
       }
     }
-    // Yeni ogrencilere ogretmeni yaz
     for (const uid of secilenOgrenciler) {
       await updateDoc(doc(db, "users", uid), {
         ogretmenUid: secilenKullanici.id,
@@ -215,45 +233,44 @@ function AdminDashboard() {
   const yeniBildirimSayisi = bildirimler.filter(b => !b.okundu).length;
 
   return (
-    <div style={{ maxWidth:"700px", margin:"0 auto", padding:"20px", fontFamily:"sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: bg, transition: "background 0.2s" }}>
+    <div style={{ maxWidth: "700px", margin: "0 auto", padding: "20px", fontFamily: "sans-serif" }}>
 
       {secilenProfil && (
         <ProfilSayfasi kullaniciId={secilenProfil} onKapat={() => setSecilenProfil(null)} mevcutKullaniciRol="admin" />
       )}
 
-      {/* Kullanici Yonetim Modali */}
       {yonetimAcik && secilenKullanici && (
-        <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.6)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:1000 }}>
-          <div style={{ background:"white", borderRadius:"16px", padding:"24px", width:"90%", maxWidth:"500px", maxHeight:"85vh", overflowY:"auto" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
-              <h3 style={{ margin:0, fontSize:"16px" }}>👤 {secilenKullanici.isim}</h3>
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.6)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000 }}>
+          <div style={{ background: kartBg, color: yaziRenk, borderRadius: "16px", padding: "24px", width: "90%", maxWidth: "500px", maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h3 style={{ margin: 0, fontSize: "16px", color: yaziRenk }}>👤 {secilenKullanici.isim}</h3>
               <button onClick={() => setYonetimAcik(false)}
-                style={{ background:"#e5e7eb", border:"none", borderRadius:"8px", padding:"6px 12px", cursor:"pointer" }}>
+                style={{ background: "#e5e7eb", border: "none", borderRadius: "8px", padding: "6px 12px", cursor: "pointer" }}>
                 Kapat
               </button>
             </div>
-            <p style={{ fontSize:"13px", color:"#6b7280", margin:"0 0 4px" }}>📧 {secilenKullanici.email}</p>
-            {secilenKullanici.okul && <p style={{ fontSize:"13px", color:"#6b7280", margin:"0 0 16px" }}>🏫 {secilenKullanici.okul}</p>}
+            <p style={{ fontSize: "13px", color: ikincilYazi, margin: "0 0 4px" }}>📧 {secilenKullanici.email}</p>
+            {secilenKullanici.okul && <p style={{ fontSize: "13px", color: ikincilYazi, margin: "0 0 16px" }}>🏫 {secilenKullanici.okul}</p>}
 
-            {/* Rol degistir */}
-            <div style={{ background:"#f9fafb", borderRadius:"12px", padding:"16px", marginBottom:"16px" }}>
-              <p style={{ fontSize:"13px", fontWeight:"600", margin:"0 0 10px" }}>
+            <div style={{ background: karanlikMod ? "#374151" : "#f9fafb", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+              <p style={{ fontSize: "13px", fontWeight: "600", margin: "0 0 10px", color: yaziRenk }}>
                 Mevcut rol:{" "}
-                <span style={{ background: rolRenk(secilenKullanici.role).bg, color: rolRenk(secilenKullanici.role).text, padding:"2px 8px", borderRadius:"6px", fontSize:"12px" }}>
+                <span style={{ background: rolRenk(secilenKullanici.role).bg, color: rolRenk(secilenKullanici.role).text, padding: "2px 8px", borderRadius: "6px", fontSize: "12px" }}>
                   {secilenKullanici.role}
                 </span>
               </p>
-              <p style={{ fontSize:"12px", color:"#6b7280", margin:"0 0 8px" }}>Rol degistir:</p>
-              <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
+              <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>Rol degistir:</p>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 {["student", "teacher", "parent", "admin"].map(rol => (
                   <button key={rol} onClick={() => rolDegistir(rol)}
                     disabled={secilenKullanici.role === rol}
                     style={{
-                      padding:"6px 12px", border:"none", borderRadius:"6px",
+                      padding: "6px 12px", border: "none", borderRadius: "6px",
                       cursor: secilenKullanici.role === rol ? "default" : "pointer",
                       background: secilenKullanici.role === rol ? rolRenk(rol).bg : "#e5e7eb",
                       color: secilenKullanici.role === rol ? rolRenk(rol).text : "#374151",
-                      fontSize:"12px", fontWeight:"600"
+                      fontSize: "12px", fontWeight: "600"
                     }}>
                     {rol === "student" ? "Ogrenci" : rol === "teacher" ? "Ogretmen" : rol === "parent" ? "Veli" : "Admin"}
                     {secilenKullanici.role === rol && " ✓"}
@@ -262,36 +279,35 @@ function AdminDashboard() {
               </div>
             </div>
 
-            {/* Ogretmense ogrenci ata */}
             {secilenKullanici.role === "teacher" && (
-              <div style={{ background:"#f9fafb", borderRadius:"12px", padding:"16px", marginBottom:"16px" }}>
-                <p style={{ fontSize:"13px", fontWeight:"600", margin:"0 0 10px" }}>
+              <div style={{ background: karanlikMod ? "#374151" : "#f9fafb", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                <p style={{ fontSize: "13px", fontWeight: "600", margin: "0 0 10px", color: yaziRenk }}>
                   📚 Sinif Atamalari ({secilenOgrenciler.length} ogrenci secildi)
                 </p>
                 {onayliOgrenciler.length === 0 ? (
-                  <p style={{ fontSize:"12px", color:"#9ca3af" }}>Onaylanmis ogrenci yok.</p>
+                  <p style={{ fontSize: "12px", color: ikincilYazi }}>Onaylanmis ogrenci yok.</p>
                 ) : (
                   <>
-                    <div style={{ maxHeight:"220px", overflowY:"auto", marginBottom:"10px" }}>
+                    <div style={{ maxHeight: "220px", overflowY: "auto", marginBottom: "10px" }}>
                       {onayliOgrenciler.map(o => (
                         <div key={o.id} onClick={() => ogrenciToggle(o.id)}
                           style={{
-                            padding:"8px 10px", borderRadius:"8px", marginBottom:"4px", cursor:"pointer",
+                            padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer",
                             background: secilenOgrenciler.includes(o.id) ? "#e0e7ff" : "white",
                             border: secilenOgrenciler.includes(o.id) ? "1px solid #4f46e5" : "1px solid #e5e7eb",
-                            display:"flex", justifyContent:"space-between", alignItems:"center"
+                            display: "flex", justifyContent: "space-between", alignItems: "center"
                           }}>
                           <div>
-                            <p style={{ margin:0, fontSize:"13px", fontWeight:"600", color: secilenOgrenciler.includes(o.id) ? "#4f46e5" : "#374151" }}>{o.isim}</p>
-                            {o.sinif && <p style={{ margin:0, fontSize:"11px", color:"#6b7280" }}>📚 {o.sinif}</p>}
-                            {o.okul && <p style={{ margin:0, fontSize:"11px", color:"#6b7280" }}>🏫 {o.okul}</p>}
+                            <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenOgrenciler.includes(o.id) ? "#4f46e5" : "#374151" }}>{o.isim}</p>
+                            {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>📚 {o.sinif}</p>}
+                            {o.okul && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>🏫 {o.okul}</p>}
                           </div>
-                          {secilenOgrenciler.includes(o.id) && <span style={{ color:"#4f46e5", fontWeight:"700" }}>✓</span>}
+                          {secilenOgrenciler.includes(o.id) && <span style={{ color: "#4f46e5", fontWeight: "700" }}>✓</span>}
                         </div>
                       ))}
                     </div>
                     <button onClick={sinifKaydet} disabled={kaydetYukleniyor}
-                      style={{ width:"100%", padding:"10px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px" }}>
+                      style={{ width: "100%", padding: "10px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
                       {kaydetYukleniyor ? "Kaydediliyor..." : "💾 Sinifi Kaydet"}
                     </button>
                   </>
@@ -299,34 +315,33 @@ function AdminDashboard() {
               </div>
             )}
 
-            {/* Veliyse cocuk ata */}
             {secilenKullanici.role === "parent" && (
-              <div style={{ background:"#f9fafb", borderRadius:"12px", padding:"16px", marginBottom:"16px" }}>
-                <p style={{ fontSize:"13px", fontWeight:"600", margin:"0 0 10px" }}>👶 Cocuk Atamasi</p>
+              <div style={{ background: karanlikMod ? "#374151" : "#f9fafb", borderRadius: "12px", padding: "16px", marginBottom: "16px" }}>
+                <p style={{ fontSize: "13px", fontWeight: "600", margin: "0 0 10px", color: yaziRenk }}>👶 Cocuk Atamasi</p>
                 {onayliOgrenciler.length === 0 ? (
-                  <p style={{ fontSize:"12px", color:"#9ca3af" }}>Onaylanmis ogrenci yok.</p>
+                  <p style={{ fontSize: "12px", color: ikincilYazi }}>Onaylanmis ogrenci yok.</p>
                 ) : (
                   <>
-                    <div style={{ maxHeight:"220px", overflowY:"auto", marginBottom:"10px" }}>
+                    <div style={{ maxHeight: "220px", overflowY: "auto", marginBottom: "10px" }}>
                       {onayliOgrenciler.map(o => (
                         <div key={o.id} onClick={() => setSecilenCocuk(o.id)}
                           style={{
-                            padding:"8px 10px", borderRadius:"8px", marginBottom:"4px", cursor:"pointer",
+                            padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer",
                             background: secilenCocuk === o.id ? "#d1fae5" : "white",
                             border: secilenCocuk === o.id ? "1px solid #10b981" : "1px solid #e5e7eb",
-                            display:"flex", justifyContent:"space-between", alignItems:"center"
+                            display: "flex", justifyContent: "space-between", alignItems: "center"
                           }}>
                           <div>
-                            <p style={{ margin:0, fontSize:"13px", fontWeight:"600", color: secilenCocuk === o.id ? "#065f46" : "#374151" }}>{o.isim}</p>
-                            {o.sinif && <p style={{ margin:0, fontSize:"11px", color:"#6b7280" }}>📚 {o.sinif}</p>}
-                            {o.okul && <p style={{ margin:0, fontSize:"11px", color:"#6b7280" }}>🏫 {o.okul}</p>}
+                            <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenCocuk === o.id ? "#065f46" : "#374151" }}>{o.isim}</p>
+                            {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>📚 {o.sinif}</p>}
+                            {o.okul && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>🏫 {o.okul}</p>}
                           </div>
-                          {secilenCocuk === o.id && <span style={{ color:"#10b981", fontWeight:"700" }}>✓</span>}
+                          {secilenCocuk === o.id && <span style={{ color: "#10b981", fontWeight: "700" }}>✓</span>}
                         </div>
                       ))}
                     </div>
                     <button onClick={cocukKaydet} disabled={kaydetYukleniyor || !secilenCocuk}
-                      style={{ width:"100%", padding:"10px", background: secilenCocuk ? "#10b981" : "#9ca3af", color:"white", border:"none", borderRadius:"8px", cursor: secilenCocuk ? "pointer" : "default", fontWeight:"600", fontSize:"13px" }}>
+                      style={{ width: "100%", padding: "10px", background: secilenCocuk ? "#10b981" : "#9ca3af", color: "white", border: "none", borderRadius: "8px", cursor: secilenCocuk ? "pointer" : "default", fontWeight: "600", fontSize: "13px" }}>
                       {kaydetYukleniyor ? "Kaydediliyor..." : "💾 Cocugu Kaydet"}
                     </button>
                   </>
@@ -335,73 +350,83 @@ function AdminDashboard() {
             )}
 
             <button onClick={() => { setYonetimAcik(false); setSecilenProfil(secilenKullanici.id); }}
-              style={{ width:"100%", padding:"10px", background:"#6b7280", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"13px" }}>
+              style={{ width: "100%", padding: "10px", background: "#6b7280", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}>
               👤 Profili Goruntule
             </button>
           </div>
         </div>
       )}
 
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"24px" }}>
-        <h2 style={{ color:"#4f46e5" }}>Admin Paneli</h2>
-        <button onClick={() => signOut(auth)}
-          style={{ padding:"8px 16px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer" }}>
-          Cikis
-        </button>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+        <h2 style={{ color: "#4f46e5", margin: 0 }}>Admin Paneli</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {/* Dark mode switch */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "12px", color: ikincilYazi }}>☀️</span>
+            <div onClick={() => { const yeni = !karanlikMod; setKaranlikMod(yeni); localStorage.setItem("adminKaranlikMod", yeni); }}
+              style={{
+                width: "36px", height: "20px", borderRadius: "10px",
+                background: karanlikMod ? "#4f46e5" : "#d1d5db",
+                cursor: "pointer", position: "relative", transition: "background 0.2s"
+              }}>
+              <div style={{
+                width: "16px", height: "16px", borderRadius: "50%", background: "white",
+                position: "absolute", top: "2px",
+                left: karanlikMod ? "18px" : "2px",
+                transition: "left 0.2s"
+              }} />
+            </div>
+            <span style={{ fontSize: "12px", color: ikincilYazi }}>🌙</span>
+          </div>
+          <button onClick={() => signOut(auth)}
+            style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>
+            Cikis
+          </button>
+        </div>
       </div>
 
-      {/* Kullanici arama - tiklaninca yonetim modali acilir */}
-      <div style={{ background:"white", padding:"12px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"16px" }}>
+      {/* Kullanici arama */}
+      <div style={{ background: kartBg, padding: "12px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
         <input type="text" placeholder="🔍 Kullanici ara - tikla, rol/sinif ata..."
           value={aramaMetni} onChange={e => setAramaMetni(e.target.value)}
-          style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"14px", boxSizing:"border-box" }} />
+          style={{ width: "100%", padding: "10px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "14px", boxSizing: "border-box", background: inputBg, color: yaziRenk }} />
         {aramaMetni.trim() && (
-          <div style={{ marginTop:"10px" }}>
-            <p style={{ fontSize:"12px", color:"#6b7280", margin:"0 0 8px" }}>{aramaSonuclari.length} sonuc — tikla yonet</p>
+          <div style={{ marginTop: "10px" }}>
+            <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>{aramaSonuclari.length} sonuc — tikla yonet</p>
             {aramaSonuclari.slice(0, 10).map(k => (
               <div key={k.id} onClick={() => kullaniciYonetimAc(k)}
-                style={{ padding:"8px 10px", background:"#f9fafb", borderRadius:"8px", marginBottom:"4px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                style={{ padding: "8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius: "8px", marginBottom: "4px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <p style={{ margin:"0", fontSize:"13px", fontWeight:"600" }}>{k.isim || "Isimsiz"}</p>
-                  <p style={{ margin:"0", fontSize:"11px", color:"#6b7280" }}>{k.email}</p>
-                  {k.role === "teacher" && (
-                    <p style={{ margin:"0", fontSize:"11px", color:"#6b7280" }}>📚 {(k.sinif || []).length} ogrenci atanmis</p>
-                  )}
-                  {k.role === "parent" && (
-                    <p style={{ margin:"0", fontSize:"11px", color:"#6b7280" }}>
-                      👶 {(k.cocuklar || []).length > 0 ? (kullaniciler[(k.cocuklar || [])[0]]?.isim || "Atanmis") : "Cocuk atanmamis"}
-                    </p>
-                  )}
+                  <p style={{ margin: "0", fontSize: "13px", fontWeight: "600", color: yaziRenk }}>{k.isim || "Isimsiz"}</p>
+                  <p style={{ margin: "0", fontSize: "11px", color: ikincilYazi }}>{k.email}</p>
                 </div>
-                <div style={{ display:"flex", gap:"4px", alignItems:"center" }}>
-                  <span style={{ padding:"2px 6px", background: rolRenk(k.role).bg, color: rolRenk(k.role).text, borderRadius:"4px", fontSize:"10px", fontWeight:"600" }}>
+                <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                  <span style={{ padding: "2px 6px", background: rolRenk(k.role).bg, color: rolRenk(k.role).text, borderRadius: "4px", fontSize: "10px", fontWeight: "600" }}>
                     {k.role}
                   </span>
-                  {k.dondurulmus && <span style={{ padding:"2px 6px", background:"#fee2e2", color:"#ef4444", borderRadius:"4px", fontSize:"10px" }}>🔒</span>}
-                  {k.reddedildi && <span style={{ padding:"2px 6px", background:"#f3f4f6", color:"#6b7280", borderRadius:"4px", fontSize:"10px" }}>Reddedildi</span>}
-                  <span style={{ fontSize:"11px", color:"#9ca3af" }}>→</span>
+                  {k.dondurulmus && <span style={{ padding: "2px 6px", background: "#fee2e2", color: "#ef4444", borderRadius: "4px", fontSize: "10px" }}>🔒</span>}
+                  <span style={{ fontSize: "11px", color: ikincilYazi }}>→</span>
                 </div>
               </div>
             ))}
-            {aramaSonuclari.length > 10 && (
-              <p style={{ fontSize:"11px", color:"#9ca3af", textAlign:"center", margin:"8px 0 0" }}>ve {aramaSonuclari.length - 10} sonuc daha...</p>
-            )}
           </div>
         )}
       </div>
 
-      <div style={{ display:"flex", gap:"6px", marginBottom:"20px", flexWrap:"wrap" }}>
+      {/* Sekmeler */}
+      <div style={{ display: "flex", gap: "6px", marginBottom: "20px", flexWrap: "wrap" }}>
         {[["etkilesimler", "💬 Paylasimlar"], ["bildirimler", "🚩 Bildirimler"], ["bekleyenler", "⏳ Onaylar"]].map(([key, label]) => (
           <button key={key} onClick={() => setAktifSekme(key)}
-            style={{ flex:"1 1 30%", padding:"10px", background: aktifSekme === key ? "#4f46e5" : "#e5e7eb", color: aktifSekme === key ? "white" : "#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"13px", position:"relative" }}>
+            style={{ flex: "1 1 30%", padding: "10px", background: aktifSekme === key ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === key ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
             {label}
             {key === "bildirimler" && yeniBildirimSayisi > 0 && (
-              <span style={{ position:"absolute", top:"-6px", right:"-6px", background: acilBildirimSayisi > 0 ? "#ef4444" : "#f59e0b", color:"white", borderRadius:"50%", width:"22px", height:"22px", fontSize:"11px", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"700" }}>
+              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: acilBildirimSayisi > 0 ? "#ef4444" : "#f59e0b", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
                 {yeniBildirimSayisi}
               </span>
             )}
             {key === "bekleyenler" && bekleyenler.length > 0 && (
-              <span style={{ position:"absolute", top:"-6px", right:"-6px", background:"#10b981", color:"white", borderRadius:"50%", width:"22px", height:"22px", fontSize:"11px", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:"700" }}>
+              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#10b981", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
                 {bekleyenler.length}
               </span>
             )}
@@ -409,24 +434,24 @@ function AdminDashboard() {
         ))}
       </div>
 
-      {yukleniyor ? <p>Yukleniyor...</p> : aktifSekme === "bekleyenler" ? (
+      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "bekleyenler" ? (
         <div>
           {bekleyenler.length === 0 ? (
-            <div style={{ background:"white", padding:"20px", borderRadius:"12px", textAlign:"center", color:"#888" }}><p>Onay bekleyen kullanici yok.</p></div>
+            <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}><p>Onay bekleyen kullanici yok.</p></div>
           ) : (
             <>
-              <h3 style={{ color:"#666", marginBottom:"16px" }}>Onay Bekleyen Kullanicilar ({bekleyenler.length})</h3>
+              <h3 style={{ color: ikincilYazi, marginBottom: "16px" }}>Onay Bekleyen Kullanicilar ({bekleyenler.length})</h3>
               {bekleyenler.map(k => (
-                <div key={k.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px" }}>
-                  <p style={{ margin:"0 0 4px", fontSize:"15px", fontWeight:"600" }}>{k.isim}</p>
-                  <p style={{ margin:"0 0 4px", fontSize:"13px", color:"#6b7280" }}>📧 {k.email}</p>
-                  {k.sinif && <p style={{ margin:"0 0 4px", fontSize:"13px", color:"#6b7280" }}>📚 {k.sinif}</p>}
-                  {k.okul && <p style={{ margin:"0 0 12px", fontSize:"13px", color:"#6b7280" }}>🏫 {k.okul}</p>}
-                  <div style={{ display:"flex", gap:"8px" }}>
-                    <button onClick={() => kullaniciOnayla(k.id)} style={{ flex:1, padding:"8px", background:"#10b981", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>✓ Ogrenci</button>
-                    <button onClick={() => ogretmenOlarakOnayla(k.id)} style={{ flex:1, padding:"8px", background:"#4f46e5", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>👩‍🏫 Ogretmen</button>
-                    <button onClick={() => veliOlarakOnayla(k.id)} style={{ flex:1, padding:"8px", background:"#f59e0b", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>👨‍👩‍👧 Veli</button>
-                    <button onClick={() => kullaniciReddet(k.id)} style={{ flex:1, padding:"8px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600", fontSize:"12px" }}>✗ Reddet</button>
+                <div key={k.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px" }}>
+                  <p style={{ margin: "0 0 4px", fontSize: "15px", fontWeight: "600", color: yaziRenk }}>{k.isim}</p>
+                  <p style={{ margin: "0 0 4px", fontSize: "13px", color: ikincilYazi }}>📧 {k.email}</p>
+                  {k.sinif && <p style={{ margin: "0 0 4px", fontSize: "13px", color: ikincilYazi }}>📚 {k.sinif}</p>}
+                  {k.okul && <p style={{ margin: "0 0 12px", fontSize: "13px", color: ikincilYazi }}>🏫 {k.okul}</p>}
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button onClick={() => kullaniciOnayla(k.id)} style={{ flex: 1, padding: "8px", background: "#10b981", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>✓ Ogrenci</button>
+                    <button onClick={() => ogretmenOlarakOnayla(k.id)} style={{ flex: 1, padding: "8px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>👩‍🏫 Ogretmen</button>
+                    <button onClick={() => veliOlarakOnayla(k.id)} style={{ flex: 1, padding: "8px", background: "#f59e0b", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>👨‍👩‍👧 Veli</button>
+                    <button onClick={() => kullaniciReddet(k.id)} style={{ flex: 1, padding: "8px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>✗ Reddet</button>
                   </div>
                 </div>
               ))}
@@ -436,31 +461,32 @@ function AdminDashboard() {
       ) : aktifSekme === "bildirimler" ? (
         <div>
           {bildirimler.length === 0 ? (
-            <div style={{ background:"white", padding:"20px", borderRadius:"12px", textAlign:"center", color:"#888" }}>
+            <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}>
               <p>Hic bildirim yok.</p>
-              <p style={{ fontSize:"12px", marginTop:"8px", color:"#9ca3af" }}>Sadece veli veya ogretmen tarafindan iletilen bildirimler burada gorunur.</p>
+              <p style={{ fontSize: "12px", marginTop: "8px", color: ikincilYazi }}>Sadece veli veya ogretmen tarafindan iletilen bildirimler burada gorunur.</p>
             </div>
           ) : (
             <>
-              <h3 style={{ color:"#666", marginBottom:"16px" }}>Iletilen Bildirimler ({bildirimler.length})</h3>
+              <h3 style={{ color: ikincilYazi, marginBottom: "16px" }}>Iletilen Bildirimler ({bildirimler.length})</h3>
               {bildirimler.map(b => (
-                <div key={b.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px", border: b.acil && !b.okundu ? "2px solid #ef4444" : "1px solid #e5e7eb", opacity: b.adminSildi ? 0.7 : 1 }}>
-                  {b.acil && !b.okundu && <div style={{ background:"#fee2e2", color:"#991b1b", padding:"6px 10px", borderRadius:"6px", fontSize:"12px", marginBottom:"8px", fontWeight:"700" }}>🚨 ACIL: Cocuk yardim istiyor!</div>}
-                  <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginBottom:"8px" }}>
-                    {!b.okundu && <span style={{ background:"#fef3c7", color:"#92400e", padding:"2px 8px", borderRadius:"6px", fontSize:"11px", fontWeight:"600" }}>YENI</span>}
-                    {b.adminSildi && <span style={{ background:"#f3f4f6", color:"#6b7280", padding:"2px 8px", borderRadius:"6px", fontSize:"11px", fontWeight:"600" }}>✓ Kaldirildi</span>}
+                <div key={b.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", border: b.acil && !b.okundu ? "2px solid #ef4444" : `1px solid ${borderRenk}`, opacity: b.adminSildi ? 0.7 : 1 }}>
+                  {b.acil && !b.okundu && <div style={{ background: "#fee2e2", color: "#991b1b", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", marginBottom: "8px", fontWeight: "700" }}>🚨 ACIL: Cocuk yardim istiyor!</div>}
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+                    {!b.okundu && <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>YENI</span>}
+                    {b.adminSildi && <span style={{ background: "#f3f4f6", color: "#6b7280", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>✓ Kaldirildi</span>}
                   </div>
-                  {b.ileten && <p style={{ margin:"0 0 6px", fontSize:"12px", color:"#4f46e5", fontWeight:"600" }}>📨 Ileten: {b.ileten} ({b.iletenRol === "teacher" ? "Ogretmen" : "Veli"})</p>}
-                  <p style={{ margin:"0 0 6px", fontSize:"13px", color:"#6b7280" }}>📋 Sebep: <strong>{b.kategori}</strong>{b.digerSebep && <span> — "{b.digerSebep}"</span>}</p>
-                  <p style={{ margin:"0 0 8px", fontSize:"13px", color:"#6b7280" }}>💙 Bildiren durumu: {b.iyiMisin === "iyi" ? "😊 Iyi" : b.iyiMisin === "uzgun" ? "😟 Biraz uzgun" : b.iyiMisin === "yardim" ? "😢 Yardim istiyor" : "—"}</p>
-                  <div style={{ background:"#f9fafb", padding:"10px", borderRadius:"8px", marginBottom:"8px" }}>
-                    <p style={{ margin:"0 0 4px", fontSize:"14px" }}>{b.icerikMetni}</p>
-                    <small style={{ color:"#6b7280" }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline" }}>{b.yazar}</span></small>
+                  {b.ileten && <p style={{ margin: "0 0 6px", fontSize: "12px", color: "#4f46e5", fontWeight: "600" }}>📨 Ileten: {b.ileten} ({b.iletenRol === "teacher" ? "Ogretmen" : "Veli"})</p>}
+                  <p style={{ margin: "0 0 6px", fontSize: "13px", color: ikincilYazi }}>📋 Sebep: <strong>{b.kategori}</strong>{b.digerSebep && <span> — "{b.digerSebep}"</span>}</p>
+                  <p style={{ margin: "0 0 8px", fontSize: "13px", color: ikincilYazi }}>💙 Bildiren durumu: {b.iyiMisin === "iyi" ? "😊 Iyi" : b.iyiMisin === "uzgun" ? "😟 Biraz uzgun" : b.iyiMisin === "yardim" ? "😢 Yardim istiyor" : "—"}</p>
+                  <div style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "8px" }}>
+                    <p style={{ margin: "0 0 4px", fontSize: "14px", color: yaziRenk }}>{b.icerikMetni}</p>
+                    {b.fotoUrl && <MedyaGoster url={b.fotoUrl} />}
+                    <small style={{ color: ikincilYazi }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.yazar}</span></small>
                   </div>
-                  <p style={{ fontSize:"12px", color:"#6b7280", margin:"0 0 8px" }}>🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline" }}>{b.bildiren}</span></p>
-                  <div style={{ display:"flex", gap:"6px" }}>
-                    {!b.okundu && <button onClick={() => bildirimOkundu(b.id)} style={{ flex:1, padding:"6px 12px", background:"#10b981", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px", fontWeight:"600" }}>✓ Okundu</button>}
-                    {!b.adminSildi && <button onClick={() => bildirimKaldir(b.id)} style={{ padding:"6px 12px", background:"#6b7280", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>🗑️ Kaldir</button>}
+                  <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.bildiren}</span></p>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    {!b.okundu && <button onClick={() => bildirimOkundu(b.id)} style={{ flex: 1, padding: "6px 12px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>✓ Okundu</button>}
+                    {!b.adminSildi && <button onClick={() => bildirimKaldir(b.id)} style={{ padding: "6px 12px", background: "#6b7280", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>🗑️ Kaldir</button>}
                   </div>
                 </div>
               ))}
@@ -469,52 +495,54 @@ function AdminDashboard() {
         </div>
       ) : (
         <div>
-          <div style={{ marginBottom:"12px" }}>
+          <div style={{ marginBottom: "12px" }}>
             <input type="text" placeholder="🔍 Gonderi veya yazar ara..." value={gonderiArama} onChange={e => setGonderiArama(e.target.value)}
-              style={{ width:"100%", padding:"10px", borderRadius:"8px", border:"1px solid #ddd", fontSize:"14px", boxSizing:"border-box" }} />
+              style={{ width: "100%", padding: "10px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "14px", boxSizing: "border-box", background: inputBg, color: yaziRenk }} />
           </div>
           {filtrelenmisGonderiler.length === 0 ? (
-            <div style={{ background:"white", padding:"20px", borderRadius:"12px", textAlign:"center", color:"#888" }}><p>Hic paylasim yok.</p></div>
+            <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}><p>Hic paylasim yok.</p></div>
           ) : (
             <>
-              <h3 style={{ color:"#666", marginBottom:"16px" }}>Tum Paylasimlar ({filtrelenmisGonderiler.length})</h3>
+              <h3 style={{ color: ikincilYazi, marginBottom: "16px" }}>Tum Paylasimlar ({filtrelenmisGonderiler.length})</h3>
               {filtrelenmisGonderiler.map(g => {
                 const yazarKullanici = kullaniciler[g.yazarUid];
                 const begenenler = g.begenenler || [];
                 const kaldirildi = g.ogrenciSildi || g.veliKaldirdi || g.ogretmenKaldirdi || g.adminSildi;
                 return (
-                  <div key={g.id} style={{ background:"white", padding:"16px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.1)", marginBottom:"12px", opacity: kaldirildi ? 0.75 : 1, border: kaldirildi ? "1px solid #e5e7eb" : "none" }}>
+                  <div key={g.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", opacity: kaldirildi ? 0.75 : 1, border: kaldirildi ? `1px solid ${borderRenk}` : "none" }}>
                     {kaldirildi && (
-                      <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginBottom:"6px" }}>
-                        {g.ogrenciSildi && <span style={{ background:"#f3f4f6", color:"#6b7280", padding:"2px 8px", borderRadius:"6px", fontSize:"11px" }}>Ogrenci sildi</span>}
-                        {g.veliKaldirdi && <span style={{ background:"#ede9fe", color:"#5b21b6", padding:"2px 8px", borderRadius:"6px", fontSize:"11px" }}>Veli kaldirdi</span>}
-                        {g.ogretmenKaldirdi && <span style={{ background:"#fef3c7", color:"#92400e", padding:"2px 8px", borderRadius:"6px", fontSize:"11px" }}>Ogretmen kaldirdi</span>}
-                        {g.adminSildi && <span style={{ background:"#fee2e2", color:"#991b1b", padding:"2px 8px", borderRadius:"6px", fontSize:"11px" }}>Admin kaldirdi</span>}
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "6px" }}>
+                        {g.ogrenciSildi && <span style={{ background: "#f3f4f6", color: "#6b7280", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Ogrenci sildi</span>}
+                        {g.veliKaldirdi && <span style={{ background: "#ede9fe", color: "#5b21b6", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Veli kaldirdi</span>}
+                        {g.ogretmenKaldirdi && <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Ogretmen kaldirdi</span>}
+                        {g.adminSildi && <span style={{ background: "#fee2e2", color: "#991b1b", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Admin kaldirdi</span>}
                       </div>
                     )}
-                    <p style={{ margin:"0 0 8px 0", fontSize:"15px" }}>{g.icerik}</p>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                        <small onClick={() => setSecilenProfil(g.yazarUid)} style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline", fontSize:"13px" }}>{g.yazar}</small>
-                        {yazarKullanici?.dondurulmus && <span style={{ background:"#fee2e2", color:"#ef4444", padding:"2px 6px", borderRadius:"8px", fontSize:"11px" }}>🔒 Dondurulmus</span>}
+                    <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: yaziRenk }}>{g.icerik}</p>
+                    {!kaldirildi && g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <small onClick={() => setSecilenProfil(g.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "13px" }}>{g.yazar}</small>
+                        {g.tarih && <small style={{ color: ikincilYazi, fontSize: "11px" }}>{new Date(g.tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(g.tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</small>}
+                        {yazarKullanici?.dondurulmus && <span style={{ background: "#fee2e2", color: "#ef4444", padding: "2px 6px", borderRadius: "8px", fontSize: "11px" }}>🔒 Dondurulmus</span>}
                       </div>
-                      <div style={{ display:"flex", gap:"6px" }}>
-                        <span style={{ padding:"4px 10px", background:"#fee2e2", color:"#ef4444", borderRadius:"6px", fontSize:"12px" }}>❤️ {begenenler.length}</span>
-                        <button onClick={() => yorumToggle(g.id)} style={{ padding:"4px 10px", background:"#e0e7ff", color:"#4f46e5", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <span style={{ padding: "4px 10px", background: "#fee2e2", color: "#ef4444", borderRadius: "6px", fontSize: "12px" }}>❤️ {begenenler.length}</span>
+                        <button onClick={() => yorumToggle(g.id)} style={{ padding: "4px 10px", background: "#e0e7ff", color: "#4f46e5", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
                           💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
                         </button>
-                        {!g.adminSildi && <button onClick={() => handleSil(g.id)} style={{ padding:"4px 10px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"12px" }}>🗑️ Kaldir</button>}
+                        {!g.adminSildi && <button onClick={() => handleSil(g.id)} style={{ padding: "4px 10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>🗑️ Kaldir</button>}
                       </div>
                     </div>
                     {acikYorumlar[g.id] && (
-                      <div style={{ marginTop:"12px", paddingTop:"12px", borderTop:"1px solid #f0f4ff" }}>
-                        {yorumlar[g.id] && yorumlar[g.id].length === 0 && <p style={{ color:"#9ca3af", fontSize:"13px", textAlign:"center" }}>Hic yorum yok.</p>}
+                      <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${borderRenk}` }}>
+                        {yorumlar[g.id] && yorumlar[g.id].length === 0 && <p style={{ color: ikincilYazi, fontSize: "13px", textAlign: "center" }}>Hic yorum yok.</p>}
                         {yorumlar[g.id] && yorumlar[g.id].map(y => (
-                          <div key={y.id} style={{ background:"#f9fafb", padding:"10px", borderRadius:"8px", marginBottom:"6px", position:"relative", opacity: y.silindi ? 0.6 : 1 }}>
-                            {y.silindi && <span style={{ fontSize:"11px", color:"#6b7280", display:"block", marginBottom:"4px" }}>[{y.silenRol === "admin" ? "Admin kaldirdi" : y.silenRol === "teacher" ? "Ogretmen kaldirdi" : y.silenRol === "parent" ? "Veli kaldirdi" : "Ogrenci sildi"}]</span>}
-                            <p style={{ margin:"0 0 4px", fontSize:"14px" }}>{y.icerik}</p>
-                            <small onClick={() => setSecilenProfil(y.yazarUid)} style={{ color:"#4f46e5", cursor:"pointer", textDecoration:"underline", fontSize:"12px" }}>{y.yazar}</small>
-                            {!y.silindi && <button onClick={() => yorumSil(g.id, y.id)} style={{ position:"absolute", top:"8px", right:"8px", padding:"2px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"5px", cursor:"pointer", fontSize:"11px" }}>Kaldir</button>}
+                          <div key={y.id} style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "6px", position: "relative", opacity: y.silindi ? 0.6 : 1 }}>
+                            {y.silindi && <span style={{ fontSize: "11px", color: ikincilYazi, display: "block", marginBottom: "4px" }}>[{y.silenRol === "admin" ? "Admin kaldirdi" : y.silenRol === "teacher" ? "Ogretmen kaldirdi" : y.silenRol === "parent" ? "Veli kaldirdi" : "Ogrenci sildi"}]</span>}
+                            <p style={{ margin: "0 0 4px", fontSize: "14px", color: yaziRenk }}>{y.icerik}</p>
+                            <small onClick={() => setSecilenProfil(y.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "12px" }}>{y.yazar}</small>
+                            {!y.silindi && <button onClick={() => yorumSil(g.id, y.id)} style={{ position: "absolute", top: "8px", right: "8px", padding: "2px 8px", background: "#ef4444", color: "white", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "11px" }}>Kaldir</button>}
                           </div>
                         ))}
                       </div>
@@ -526,6 +554,7 @@ function AdminDashboard() {
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }
