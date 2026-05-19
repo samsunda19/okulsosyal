@@ -31,9 +31,9 @@ const MedyaGoster = ({ url }) => {
   if (belge) {
     const dosyaAdi = url.split("/").pop().split("?")[0];
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer"
-        style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "8px", padding: "8px 12px", background: "#e0e7ff", color: "#4f46e5", borderRadius: "8px", textDecoration: "none", fontSize: "13px", fontWeight: "600" }}>
-        📄 {dosyaAdi}
+      <a href={url} download={dosyaAdi}
+        style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "8px", padding: "8px 12px", background: "#e0e7ff", color: "#4f46e5", borderRadius: "8px", textDecoration: "none", fontSize: "13px", fontWeight: "600", cursor: "pointer" }}>
+        📄 {dosyaAdi} ⬇️
       </a>
     );
   }
