@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 
@@ -39,6 +39,8 @@ function AdminDashboard() {
   const [secilenCocuk, setSecilenCocuk] = useState("");
   const [kaydetYukleniyor, setKaydetYukleniyor] = useState(false);
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("adminKaranlikMod") === "true");
+  const [postDetay, setPostDetay] = useState({});
+  const [acikBildirimPost, setAcikBildirimPost] = useState({});
 
   const bg = karanlikMod ? "#111827" : "#f9fafb";
   const kartBg = karanlikMod ? "#1f2937" : "white";
@@ -72,7 +74,7 @@ function AdminDashboard() {
 
     const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
     const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    setBildirimler(tumReports.filter(r => r.adminaIletti === true));
+    setBildirimler(tumReports.filter(r => r.adminaIletti === true && !r.adminSildi));
     setYukleniyor(false);
   };
 
@@ -117,7 +119,18 @@ function AdminDashboard() {
     await updateDoc(doc(db, "reports", reportId), {
       adminSildi: true, adminSildiTarihi: serverTimestamp(), adminSildiUid: auth.currentUser.uid
     });
-    setBildirimler(prev => prev.map(b => b.id === reportId ? { ...b, adminSildi: true } : b));
+    setBildirimler(prev => prev.filter(b => b.id !== reportId));
+  };
+
+  const bildirimPostGoster = async (reportId, postId) => {
+    const zatenAcik = acikBildirimPost[reportId];
+    setAcikBildirimPost(prev => ({ ...prev, [reportId]: !zatenAcik }));
+    if (!zatenAcik && !postDetay[postId]) {
+      const postDoc = await getDoc(doc(db, "posts", postId));
+      if (postDoc.exists()) {
+        setPostDetay(prev => ({ ...prev, [postId]: { id: postDoc.id, ...postDoc.data() } }));
+      }
+    }
   };
 
   const kullaniciOnayla = async (kullaniciId) => {
@@ -213,6 +226,11 @@ function AdminDashboard() {
     if (rol === "teacher") return { bg: "#e0e7ff", text: "#3730a3" };
     if (rol === "parent") return { bg: "#d1fae5", text: "#065f46" };
     return { bg: "#f3f4f6", text: "#374151" };
+  };
+
+  const tarihFormat = (seconds) => {
+    const d = new Date(seconds * 1000);
+    return d.toLocaleDateString("tr-TR") + " " + d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
   };
 
   const aramaSonuclari = aramaMetni.trim()
@@ -361,21 +379,11 @@ function AdminDashboard() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <h2 style={{ color: "#4f46e5", margin: 0 }}>Admin Paneli</h2>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {/* Dark mode switch */}
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span style={{ fontSize: "12px", color: ikincilYazi }}>☀️</span>
             <div onClick={() => { const yeni = !karanlikMod; setKaranlikMod(yeni); localStorage.setItem("adminKaranlikMod", yeni); }}
-              style={{
-                width: "36px", height: "20px", borderRadius: "10px",
-                background: karanlikMod ? "#4f46e5" : "#d1d5db",
-                cursor: "pointer", position: "relative", transition: "background 0.2s"
-              }}>
-              <div style={{
-                width: "16px", height: "16px", borderRadius: "50%", background: "white",
-                position: "absolute", top: "2px",
-                left: karanlikMod ? "18px" : "2px",
-                transition: "left 0.2s"
-              }} />
+              style={{ width: "36px", height: "20px", borderRadius: "10px", background: karanlikMod ? "#4f46e5" : "#d1d5db", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+              <div style={{ width: "16px", height: "16px", borderRadius: "50%", background: "white", position: "absolute", top: "2px", left: karanlikMod ? "18px" : "2px", transition: "left 0.2s" }} />
             </div>
             <span style={{ fontSize: "12px", color: ikincilYazi }}>🌙</span>
           </div>
@@ -469,24 +477,39 @@ function AdminDashboard() {
             <>
               <h3 style={{ color: ikincilYazi, marginBottom: "16px" }}>Iletilen Bildirimler ({bildirimler.length})</h3>
               {bildirimler.map(b => (
-                <div key={b.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", border: b.acil && !b.okundu ? "2px solid #ef4444" : `1px solid ${borderRenk}`, opacity: b.adminSildi ? 0.7 : 1 }}>
+                <div key={b.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", border: b.acil && !b.okundu ? "2px solid #ef4444" : `1px solid ${borderRenk}` }}>
                   {b.acil && !b.okundu && <div style={{ background: "#fee2e2", color: "#991b1b", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", marginBottom: "8px", fontWeight: "700" }}>🚨 ACIL: Cocuk yardim istiyor!</div>}
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
                     {!b.okundu && <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>YENI</span>}
-                    {b.adminSildi && <span style={{ background: "#f3f4f6", color: "#6b7280", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>✓ Kaldirildi</span>}
                   </div>
                   {b.ileten && <p style={{ margin: "0 0 6px", fontSize: "12px", color: "#4f46e5", fontWeight: "600" }}>📨 Ileten: {b.ileten} ({b.iletenRol === "teacher" ? "Ogretmen" : "Veli"})</p>}
                   <p style={{ margin: "0 0 6px", fontSize: "13px", color: ikincilYazi }}>📋 Sebep: <strong>{b.kategori}</strong>{b.digerSebep && <span> — "{b.digerSebep}"</span>}</p>
                   <p style={{ margin: "0 0 8px", fontSize: "13px", color: ikincilYazi }}>💙 Bildiren durumu: {b.iyiMisin === "iyi" ? "😊 Iyi" : b.iyiMisin === "uzgun" ? "😟 Biraz uzgun" : b.iyiMisin === "yardim" ? "😢 Yardim istiyor" : "—"}</p>
                   <div style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "8px" }}>
-                    <p style={{ margin: "0 0 4px", fontSize: "14px", color: yaziRenk }}>{b.icerikMetni}</p>
+                    <p style={{ margin: "0 0 4px", fontSize: "14px", color: yaziRenk }}>{b.icerikMetni || "—"}</p>
                     {b.fotoUrl && <MedyaGoster url={b.fotoUrl} />}
                     <small style={{ color: ikincilYazi }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.yazar}</span></small>
                   </div>
+                  {/* Paylasim detayi - tarih icin */}
+                  {b.postId && (
+                    <button onClick={() => bildirimPostGoster(b.id, b.postId)}
+                      style={{ fontSize: "12px", color: "#4f46e5", background: "none", border: "none", cursor: "pointer", padding: "0", marginBottom: "8px" }}>
+                      {acikBildirimPost[b.id] ? "▲ Paylasim detayini gizle" : "▼ Paylasim tarihini goster"}
+                    </button>
+                  )}
+                  {acikBildirimPost[b.id] && postDetay[b.postId] && (
+                    <div style={{ background: karanlikMod ? "#4b5563" : "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
+                      {postDetay[b.postId].tarih && (
+                        <p style={{ margin: "0", color: ikincilYazi }}>
+                          📅 Paylasim tarihi: <strong>{tarihFormat(postDetay[b.postId].tarih.seconds)}</strong>
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.bildiren}</span></p>
                   <div style={{ display: "flex", gap: "6px" }}>
                     {!b.okundu && <button onClick={() => bildirimOkundu(b.id)} style={{ flex: 1, padding: "6px 12px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>✓ Okundu</button>}
-                    {!b.adminSildi && <button onClick={() => bildirimKaldir(b.id)} style={{ padding: "6px 12px", background: "#6b7280", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>🗑️ Kaldir</button>}
+                    <button onClick={() => bildirimKaldir(b.id)} style={{ padding: "6px 12px", background: "#6b7280", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>🗑️ Kaldir</button>
                   </div>
                 </div>
               ))}
@@ -521,9 +544,9 @@ function AdminDashboard() {
                     <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: yaziRenk }}>{g.icerik}</p>
                     {!kaldirildi && g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                         <small onClick={() => setSecilenProfil(g.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "13px" }}>{g.yazar}</small>
-                        {g.tarih && <small style={{ color: ikincilYazi, fontSize: "11px" }}>{new Date(g.tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(g.tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</small>}
+                        {g.tarih && <small style={{ color: ikincilYazi, fontSize: "11px" }}>{tarihFormat(g.tarih.seconds)}</small>}
                         {yazarKullanici?.dondurulmus && <span style={{ background: "#fee2e2", color: "#ef4444", padding: "2px 6px", borderRadius: "8px", fontSize: "11px" }}>🔒 Dondurulmus</span>}
                       </div>
                       <div style={{ display: "flex", gap: "6px" }}>
