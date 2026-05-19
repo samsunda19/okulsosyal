@@ -74,6 +74,12 @@ function StudentDashboard() {
   // Ogretmen sekmesi
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [gorulmemisOgretmenPost, setGorulmemisOgretmenPost] = useState(0);
+  const [kullaniciFotolari, setKullaniciFotolari] = useState({});
+  // Foto yukleme
+  const [secilenFoto, setSecilenFoto] = useState(null);
+  const [fotoOnizleme, setFotoOnizleme] = useState(null);
+  const [fotoYukleniyor, setFotoYukleniyor] = useState(false);
+  const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
 
   useEffect(() => {
     ilkYukle();
@@ -139,7 +145,13 @@ function StudentDashboard() {
     const tumKullanicilar = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     const ogrenciler = tumKullanicilar.filter(u => u.role === "student" && u.onaylandi !== false && u.id !== auth.currentUser.uid);
     setTumOgrenciler(ogrenciler);
-    // Ogretmen listesi kesin dolu, direkt gonderileri getir
+    // Profil fotolarini kaydet
+    const fotolar = {};
+    snapshot.docs.forEach(d => {
+      const data = d.data();
+      if (data.profilFotoUrl) fotolar[d.id] = data.profilFotoUrl;
+    });
+    setKullaniciFotolari(fotolar);
   };
 
 
@@ -213,26 +225,49 @@ function StudentDashboard() {
   };
 
   const gonderiYap = async () => {
-    if (!gonderi.trim()) return;
-    if (kufurKontrol(gonderi)) {
+    if (!gonderi.trim() && !secilenFoto) return;
+    if (gonderi.trim() && kufurKontrol(gonderi)) {
       setHataMesaj("⚠️ Paylasimda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
       setTimeout(() => setHataMesaj(""), 4000);
       return;
     }
     setYukleniyor(true);
+    let fotoUrl = null;
+    if (secilenFoto) {
+      try {
+        setFotoYukleniyor(true);
+        const token = await auth.currentUser.getIdToken();
+        const key = "posts/" + auth.currentUser.uid + "_" + Date.now() + "." + secilenFoto.name.split(".").pop();
+        await fetch(WORKER_URL + "/upload/" + key, {
+          method: "PUT",
+          headers: { "Content-Type": secilenFoto.type, "Authorization": "Bearer " + token },
+          body: secilenFoto
+        });
+        fotoUrl = WORKER_URL + "/photo/" + key;
+        setFotoYukleniyor(false);
+      } catch (err) {
+        alert("Foto yuklenemedi!");
+        setYukleniyor(false);
+        setFotoYukleniyor(false);
+        return;
+      }
+    }
     await addDoc(collection(db, "posts"), {
       icerik: gonderi,
       yazar: kullanici.isim || auth.currentUser.email,
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp(),
       begenenler: [],
+      fotoUrl: fotoUrl,
       ogrenciSildi: false,
       veliKaldirdi: false,
       ogretmenKaldirdi: false,
       adminSildi: false
     });
     setGonderi("");
-    await gonderileriGetir(kullanici.ogretmenUid || null);
+    setSecilenFoto(null);
+    setFotoOnizleme(null);
+    await gonderileriGetir();
     setYukleniyor(false);
   };
 
@@ -359,7 +394,13 @@ function StudentDashboard() {
         {g.ogrenciSildi ? (
           <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: kartIkincilYazi, fontStyle: "italic" }}>🗑️ Bu gonderi kaldirildi.</p>
         ) : (
-          <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>{g.icerik}</p>
+          <>
+            {g.icerik && <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>{g.icerik}</p>}
+            {g.fotoUrl && (
+              <img src={g.fotoUrl} alt="gonderi" style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", cursor: "pointer" }}
+                onClick={() => window.open(g.fotoUrl, "_blank")} />
+            )}
+          </>
         )}
         {bildirdimMi && (
           <div style={{ fontSize: "11px", color: "#92400e", background: "#fef3c7", padding: "3px 8px", borderRadius: "6px", display: "inline-block", marginBottom: "6px" }}>
@@ -367,9 +408,19 @@ function StudentDashboard() {
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-          <small onClick={() => setSecilenProfil(g.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>
-            {g.yazar}{kullanici.arkadaslar.includes(g.yazarUid) && " 👥"}
-          </small>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}
+            onClick={() => setSecilenProfil(g.yazarUid)}>
+            {kullaniciFotolari[g.yazarUid] ? (
+              <img src={kullaniciFotolari[g.yazarUid]} alt="" style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e7eb" }} />
+            ) : (
+              <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "white", fontWeight: "700", flexShrink: 0 }}>
+                {(g.yazar || "?")[0].toUpperCase()}
+              </div>
+            )}
+            <small style={{ color: "#4f46e5", textDecoration: "underline" }}>
+              {g.yazar}{kullanici.arkadaslar.includes(g.yazarUid) && " 👥"}
+            </small>
+          </div>
           <div style={{ display: "flex", gap: "6px" }}>
             <button onClick={() => begeniToggle(g.id, begenenler, listeAdi)}
               style={{ padding: "4px 10px", background: benBegendimMi ? "#fee2e2" : (karanlikMod ? "#374151" : "#f3f4f6"), color: benBegendimMi ? "#ef4444" : kartIkincilYazi, border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
@@ -382,7 +433,7 @@ function StudentDashboard() {
                 💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
               </button>
             )}
-            {!benimPaylasimim && !bildirdimMi && !ogretmenPostu && (
+            {!benimPaylasimim && !bildirdimMi && (
               <button onClick={() => bildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
                 style={{ padding: "4px 10px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
                 🚩
@@ -566,9 +617,31 @@ function StudentDashboard() {
             <textarea placeholder="Ne dusunuyorsun?" value={gonderi} onChange={e => setGonderi(e.target.value)}
               style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "15px", resize: "vertical", minHeight: "80px", boxSizing: "border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
             {hataMesaj && <div style={{ marginTop: "8px", padding: "8px 12px", background: "#fee2e2", color: "#ef4444", borderRadius: "8px", fontSize: "13px" }}>{hataMesaj}</div>}
-            <button onClick={gonderiYap} disabled={yukleniyor} style={{ marginTop: "10px", padding: "10px 24px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "15px" }}>
-              {yukleniyor ? "Paylasiliyor..." : "Paylas"}
-            </button>
+            {fotoOnizleme && (
+              <div style={{ marginTop: "10px", position: "relative", display: "inline-block" }}>
+                <img src={fotoOnizleme} alt="onizleme" style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "8px", border: "1px solid #ddd" }} />
+                <button onClick={() => { setSecilenFoto(null); setFotoOnizleme(null); }}
+                  style={{ position: "absolute", top: "4px", right: "4px", background: "#ef4444", color: "white", border: "none", borderRadius: "50%", width: "24px", height: "24px", cursor: "pointer", fontSize: "12px", fontWeight: "700" }}>
+                  ✕
+                </button>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: "10px", marginTop: "10px", alignItems: "center" }}>
+              <label style={{ padding: "10px 16px", background: karanlikMod ? "#374151" : "#f3f4f6", color: kartYazi, border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" }}>
+                📷 Foto
+                <input type="file" accept="image/*" onChange={e => {
+                  const f = e.target.files[0];
+                  if (f) {
+                    if (f.size > 5 * 1024 * 1024) { alert("Max 5MB!"); return; }
+                    setSecilenFoto(f);
+                    setFotoOnizleme(URL.createObjectURL(f));
+                  }
+                }} style={{ display: "none" }} />
+              </label>
+              <button onClick={gonderiYap} disabled={yukleniyor || fotoYukleniyor} style={{ padding: "10px 24px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "15px" }}>
+                {fotoYukleniyor ? "Foto yukleniyor..." : yukleniyor ? "Paylasiliyor..." : "Paylas"}
+              </button>
+            </div>
           </div>
         )}
 

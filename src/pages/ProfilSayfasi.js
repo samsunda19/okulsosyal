@@ -49,6 +49,8 @@ function getBasHarfler(isim) {
 function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   const [profil, setProfil] = useState(null);
   const [benimProfilim2, setBenimProfilim2] = useState(null);
+  const [profilFoto, setProfilFoto] = useState(null);
+  const [fotoYukleniyor, setFotoYukleniyor] = useState(false);
   const [gonderiler, setGonderiler] = useState([]);
   const [engellenenlerListesi, setEngellenenlerListesi] = useState([]);
   const [istatistik, setIstatistik] = useState({ paylasim: 0, yorum: 0, begeni: 0 });
@@ -74,6 +76,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       if (userDoc.exists()) {
         const data = userDoc.data();
         setProfil(data);
+        if (data.profilFotoUrl) setProfilFoto(data.profilFotoUrl);
         setIsim(data.isim || "");
         setSinif(data.sinif || "");
         setOkul(data.okul || "");
@@ -132,6 +135,29 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
     };
     getir();
   }, [kullaniciId, benimProfilim]);
+
+  const fotoYukle = async (e) => {
+    const dosya = e.target.files[0];
+    if (!dosya) return;
+    if (!dosya.type.startsWith("image/")) { alert("Sadece resim yukleyebilirsiniz!"); return; }
+    if (dosya.size > 5 * 1024 * 1024) { alert("Dosya max 5MB olmali!"); return; }
+    setFotoYukleniyor(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const key = "profil/" + auth.currentUser.uid + "_" + Date.now() + "." + dosya.name.split(".").pop();
+      await fetch(WORKER_URL + "/upload/" + key, {
+        method: "PUT",
+        headers: { "Content-Type": dosya.type, "Authorization": "Bearer " + token },
+        body: dosya
+      });
+      const fotoUrl = WORKER_URL + "/photo/" + key;
+      await updateDoc(doc(db, "users", auth.currentUser.uid), { profilFotoUrl: fotoUrl });
+      setProfilFoto(fotoUrl);
+    } catch (err) {
+      alert("Foto yuklenemedi: " + err.message);
+    }
+    setFotoYukleniyor(false);
+  };
 
   const handleKaydet = async () => {
     await updateDoc(doc(db, "users", kullaniciId), { isim, sinif, okul });
@@ -304,6 +330,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   );
 
   const profilIsim = profil?.isim || profil?.email || "?";
+  const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
   const avatarRenk = getAvatarRenk(profilIsim);
   const basHarfler = getBasHarfler(profilIsim);
 
@@ -355,13 +382,33 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
 
         <div style={{ padding:"0 30px 30px" }}>
           <div style={{ textAlign:"center", marginTop:"-50px", marginBottom:"16px" }}>
-            <div style={{
-              width:"100px", height:"100px", borderRadius:"50%", background: avatarRenk,
-              display:"flex", alignItems:"center", justifyContent:"center", fontSize:"38px",
-              fontWeight:"800", color:"white", margin:"0 auto", border:"5px solid white",
-              boxShadow:"0 4px 12px rgba(0,0,0,0.15)"
-            }}>
-              {basHarfler}
+            <div style={{ position: "relative", width: "100px", margin: "0 auto" }}>
+              <div style={{
+                width:"100px", height:"100px", borderRadius:"50%", background: profilFoto ? "transparent" : avatarRenk,
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:"38px",
+                fontWeight:"800", color:"white", border:"5px solid white",
+                boxShadow:"0 4px 12px rgba(0,0,0,0.15)", overflow: "hidden"
+              }}>
+                {profilFoto ? (
+                  <img src={profilFoto} alt="profil" 
+                    style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }}
+                    onClick={() => window.open(profilFoto, "_blank")} />
+                ) : (
+                  basHarfler
+                )}
+              </div>
+              {benimProfilim && (
+                <label style={{
+                  position: "absolute", bottom: "0", right: "0",
+                  background: "#4f46e5", color: "white", borderRadius: "50%",
+                  width: "28px", height: "28px", display: "flex", alignItems: "center",
+                  justifyContent: "center", cursor: "pointer", fontSize: "14px",
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.2)"
+                }}>
+                  {fotoYukleniyor ? "..." : "📷"}
+                  <input type="file" accept="image/*" onChange={fotoYukle} style={{ display: "none" }} />
+                </label>
+              )}
             </div>
 
             <div style={{ marginTop:"12px" }}>
