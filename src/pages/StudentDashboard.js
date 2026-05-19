@@ -669,9 +669,18 @@ function StudentDashboard() {
               {aramaSonuclari.slice(0, 8).map(k => (
                 <div key={k.id} onClick={() => { setSecilenProfil(k.id); setAramaMetni(""); }}
                   style={{ padding: "8px 10px", background: karanlikMod ? "#374151" : "#f9fafb", borderRadius: "8px", marginBottom: "4px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <p style={{ margin: "0", fontSize: "13px", fontWeight: "600", color: kartYazi }}>{k.isim || "Isimsiz"}</p>
-                    {k.sinif && <p style={{ margin: "0", fontSize: "11px", color: kartIkincilYazi }}>📚 {k.sinif}</p>}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    {kullaniciFotolari[k.id] ? (
+                      <img src={kullaniciFotolari[k.id]} alt="" style={{ width: "32px", height: "32px", borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e7eb", flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "white", fontWeight: "700", flexShrink: 0 }}>
+                        {(k.isim || "?")[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <p style={{ margin: "0", fontSize: "13px", fontWeight: "600", color: kartYazi }}>{k.isim || "Isimsiz"}</p>
+                      {k.sinif && <p style={{ margin: "0", fontSize: "11px", color: kartIkincilYazi }}>📚 {k.sinif}</p>}
+                    </div>
                   </div>
                   {kullanici.arkadaslar.includes(k.id) && <span style={{ background: "#d1fae5", color: "#065f46", padding: "2px 6px", borderRadius: "4px", fontSize: "10px" }}>Arkadas</span>}
                   {kullanici.gidenIstekler.includes(k.id) && <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: "4px", fontSize: "10px" }}>Istek gonderildi</span>}
