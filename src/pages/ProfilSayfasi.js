@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { doc, getDoc, updateDoc, collection, getDocs, addDoc, arrayUnion, arrayRemove, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, collection, getDocs, addDoc, arrayUnion, arrayRemove, serverTimestamp, query, where, orderBy, limit, startAfter } from "firebase/firestore";
 
 const ARKAPLANLAR = [
   { id: "varsayilan", isim: "Balonlu Cocuklar", deger: "url(/background2.png)", tip: "resim" },
@@ -42,6 +42,8 @@ const BILDIRIM_KATEGORILERI = [
   { id: "diger", emoji: "😟", baslik: "Baska bir sebep", duygusal: true }
 ];
 
+const POST_LIMIT = 10;
+
 function getAvatarRenk(isim) {
   if (!isim) return AVATAR_RENKLERI[0];
   const harf = isim.charCodeAt(0) || 0;
@@ -51,9 +53,7 @@ function getAvatarRenk(isim) {
 function getBasHarfler(isim) {
   if (!isim) return "?";
   const parcalar = isim.trim().split(" ");
-  if (parcalar.length >= 2) {
-    return (parcalar[0][0] + parcalar[1][0]).toUpperCase();
-  }
+  if (parcalar.length >= 2) return (parcalar[0][0] + parcalar[1][0]).toUpperCase();
   return parcalar[0][0].toUpperCase();
 }
 
@@ -63,6 +63,9 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   const [profilFoto, setProfilFoto] = useState(null);
   const [fotoYukleniyor, setFotoYukleniyor] = useState(false);
   const [gonderiler, setGonderiler] = useState([]);
+  const [sonDoc, setSonDoc] = useState(null);
+  const [dahaFazla, setDahaFazla] = useState(false);
+  const [dahaFazlaYukleniyor, setDahaFazlaYukleniyor] = useState(false);
   const [engellenenlerListesi, setEngellenenlerListesi] = useState([]);
   const [istatistik, setIstatistik] = useState({ paylasim: 0, yorum: 0, begeni: 0 });
   const [duzenliyor, setDuzenliyor] = useState(false);
@@ -78,7 +81,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   const [duzenlenenPostId, setDuzenlenenPostId] = useState(null);
   const [duzenlenenMetin, setDuzenlenenMetin] = useState("");
   const [bildirdigim, setBildirdigim] = useState([]);
-  // Bildirim modal
   const [bildirimModal, setBildirimModal] = useState(null);
   const [bildirimAdimi, setBildirimAdimi] = useState(1);
   const [secilenKategori, setSecilenKategori] = useState(null);
@@ -91,6 +93,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
 
   useEffect(() => {
     const getir = async () => {
+      // Profil bilgisi
       const userDoc = await getDoc(doc(db, "users", kullaniciId));
       if (userDoc.exists()) {
         const data = userDoc.data();
@@ -101,6 +104,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
         setOkul(data.okul || "");
       }
 
+      // Kendi profilimiz
       if (!benimProfilim) {
         const benDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
         if (benDoc.exists()) setBenimProfilim2(benDoc.data());
@@ -121,26 +125,13 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
         }
       }
 
-      const postSnapshot = await getDocs(collection(db, "posts"));
-      const tumPosts = postSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      const kullaniciPosts = tumPosts
-        .filter(p => p.yazarUid === kullaniciId)
-        .sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
-      setGonderiler(kullaniciPosts);
+      // İlk 10 post - hızlı
+      await ilkPostlariGetir();
 
-      let yorumSayisi = 0;
-      let begeniSayisi = 0;
-      for (const post of tumPosts) {
-        const yorumSnapshot = await getDocs(collection(db, "posts", post.id, "comments"));
-        for (const d of yorumSnapshot.docs) {
-          if (d.data().yazarUid === kullaniciId && !d.data().silindi) yorumSayisi++;
-        }
-        if (post.yazarUid === kullaniciId) begeniSayisi += (post.begenenler || []).length;
-      }
-      const aktifPaylasimlar = kullaniciPosts.filter(p => !p.ogrenciSildi && !p.veliKaldirdi && !p.ogretmenKaldirdi && !p.adminSildi);
-      setIstatistik({ paylasim: aktifPaylasimlar.length, yorum: yorumSayisi, begeni: begeniSayisi });
+      // İstatistik - sadece sayılar, hafif sorgu
+      await istatistikGetir();
 
-      // Bildirdigim postlari getir
+      // Bildirdigim postlar
       const reportSnapshot = await getDocs(collection(db, "reports"));
       const bildirimListesi = reportSnapshot.docs
         .filter(d => d.data().bildirenUid === auth.currentUser.uid)
@@ -153,7 +144,58 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       setYukleniyor(false);
     };
     getir();
-  }, [kullaniciId, benimProfilim]);
+  }, [kullaniciId, benimProfilim]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ilkPostlariGetir = async () => {
+    const q = query(
+      collection(db, "posts"),
+      where("yazarUid", "==", kullaniciId),
+      orderBy("tarih", "desc"),
+      limit(POST_LIMIT)
+    );
+    const snapshot = await getDocs(q);
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    setGonderiler(liste);
+    setSonDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+    setDahaFazla(snapshot.docs.length === POST_LIMIT);
+  };
+
+  const dahaFazlaGetir = async () => {
+    if (!sonDoc || dahaFazlaYukleniyor) return;
+    setDahaFazlaYukleniyor(true);
+    const q = query(
+      collection(db, "posts"),
+      where("yazarUid", "==", kullaniciId),
+      orderBy("tarih", "desc"),
+      startAfter(sonDoc),
+      limit(POST_LIMIT)
+    );
+    const snapshot = await getDocs(q);
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    setGonderiler(prev => [...prev, ...liste]);
+    setSonDoc(snapshot.docs[snapshot.docs.length - 1] || null);
+    setDahaFazla(snapshot.docs.length === POST_LIMIT);
+    setDahaFazlaYukleniyor(false);
+  };
+
+  const istatistikGetir = async () => {
+    // Sadece bu kullanicinin postlarini getir - hafif
+    const postQ = query(collection(db, "posts"), where("yazarUid", "==", kullaniciId));
+    const postSnapshot = await getDocs(postQ);
+    const tumPosts = postSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const aktifPaylasimlar = tumPosts.filter(p => !p.ogrenciSildi && !p.veliKaldirdi && !p.ogretmenKaldirdi && !p.adminSildi);
+    const begeniSayisi = tumPosts.reduce((acc, p) => acc + (p.begenenler || []).length, 0);
+
+    // Yorum sayisi - sadece aktif postlar icin
+    let yorumSayisi = 0;
+    for (const post of aktifPaylasimlar.slice(0, 20)) { // Max 20 post icin yorum say
+      const yorumSnapshot = await getDocs(collection(db, "posts", post.id, "comments"));
+      for (const d of yorumSnapshot.docs) {
+        if (d.data().yazarUid === kullaniciId && !d.data().silindi) yorumSayisi++;
+      }
+    }
+    setIstatistik({ paylasim: aktifPaylasimlar.length, yorum: yorumSayisi, begeni: begeniSayisi });
+  };
 
   const fotoYukle = async (e) => {
     const dosya = e.target.files[0];
@@ -221,8 +263,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
     else if (dondurmeSuresi === "1hafta") bitis = new Date(simdi.getTime() + 7 * 24 * 60 * 60 * 1000);
     else if (dondurmeSuresi === "1ay") bitis = new Date(simdi.getTime() + 30 * 24 * 60 * 60 * 1000);
     await updateDoc(doc(db, "users", kullaniciId), {
-      dondurulmus: true,
-      dondurulmaBitis: bitis ? bitis.toISOString() : null
+      dondurulmus: true, dondurulmaBitis: bitis ? bitis.toISOString() : null
     });
     setProfil(prev => ({ ...prev, dondurulmus: true, dondurulmaBitis: bitis ? bitis.toISOString() : null }));
     setDondurmModal(false);
@@ -262,11 +303,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   };
 
   const bildirimGonder = async (iyiMisin = null) => {
-    if (secilenKategori.id === "diger" && !digerSebep.trim()) {
-      alert("Lutfen sebebinizi yazin!");
-      return;
-    }
-    const mevcutKullanici = benimProfilim2;
+    if (secilenKategori.id === "diger" && !digerSebep.trim()) { alert("Lutfen sebebinizi yazin!"); return; }
     await addDoc(collection(db, "reports"), {
       tip: "post",
       icerikId: bildirimModal.id,
@@ -276,19 +313,15 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       yazarUid: bildirimModal.yazarUid,
       yazar: bildirimModal.yazar,
       bildirenUid: auth.currentUser.uid,
-      bildiren: mevcutKullanici?.isim || auth.currentUser.email,
+      bildiren: benimProfilim2?.isim || auth.currentUser.email,
       kategori: secilenKategori.baslik,
       kategoriId: secilenKategori.id,
       digerSebep: digerSebep,
       iyiMisin: iyiMisin,
       acil: iyiMisin === "yardim",
       tarih: serverTimestamp(),
-      okundu: false,
-      veliGordu: false,
-      veliSildi: false,
-      ogretmenGordu: false,
-      ogretmenSildi: false,
-      adminaIletti: false
+      okundu: false, veliGordu: false, veliSildi: false,
+      ogretmenGordu: false, ogretmenSildi: false, adminaIletti: false
     });
     setBildirdigim(prev => [...prev, bildirimModal.id]);
     setBildirimModal(null);
@@ -364,8 +397,12 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   };
 
   if (yukleniyor) return (
-    <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
-      <div style={{ background:"white", padding:"30px", borderRadius:"16px" }}>Yukleniyor...</div>
+    <div onClick={onKapat} style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
+      <div style={{ background:"white", padding:"30px", borderRadius:"16px", textAlign:"center" }}>
+        <div style={{ width:"40px", height:"40px", border:"4px solid #e5e7eb", borderTop:"4px solid #4f46e5", borderRadius:"50%", animation:"spin 0.8s linear infinite", margin:"0 auto 12px" }} />
+        <p style={{ margin:0, color:"#6b7280", fontSize:"14px" }}>Yukleniyor...</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
     </div>
   );
 
@@ -380,7 +417,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   const ayniOkul = benimProfilim2?.okul && profil?.okul && normalize(benimProfilim2.okul) === normalize(profil.okul);
 
   return (
-    <div style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
+    <div onClick={onKapat} style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"rgba(0,0,0,0.5)", display:"flex", justifyContent:"center", alignItems:"center", zIndex:999 }}>
 
       {/* Bildirim Modal */}
       {bildirimModal && (
@@ -443,7 +480,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
         </div>
       )}
 
-      <div style={{ background:"white", borderRadius:"20px", width:"90%", maxWidth:"500px", maxHeight:"85vh", overflowY:"auto", padding:"0", position:"relative" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"white", borderRadius:"20px", width:"90%", maxWidth:"500px", maxHeight:"85vh", overflowY:"auto", padding:"0", position:"relative" }}>
         <div style={{ background: avatarRenk, height:"100px", borderRadius:"20px 20px 0 0", position:"relative" }}>
           <button onClick={onKapat} style={{ position:"absolute", top:"16px", right:"16px", background:"rgba(255,255,255,0.3)", border:"none", borderRadius:"50%", width:"32px", height:"32px", cursor:"pointer", fontSize:"16px", color:"white", fontWeight:"700" }}>✕</button>
         </div>
@@ -528,7 +565,6 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
                 </>
               )
             )}
-
             {!benimProfilim && ogrenciyim && !engellenmisMi && (
               <>
                 {arkadasMi && <button onClick={arkadasliktanCikar} style={{ flex:"1 1 45%", padding:"10px", background:"#ef4444", color:"white", border:"none", borderRadius:"8px", cursor:"pointer", fontWeight:"600" }}>❌ Arkadasliktan Cikar</button>}
@@ -606,62 +642,67 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
           {gonderiler.length === 0 ? (
             <p style={{ color:"#9ca3af", textAlign:"center" }}>Hic paylasim yok.</p>
           ) : (
-            gonderiler.map(g => {
-              const kaldirildi = g.ogrenciSildi || g.veliKaldirdi || g.ogretmenKaldirdi || g.adminSildi;
-              const bildirdimMi = bildirdigim.includes(g.id);
-              return (
-                <div key={g.id} style={{ background: kaldirildi ? "#f3f4f6" : "#f9fafb", padding:"12px", borderRadius:"10px", marginBottom:"8px", position:"relative", opacity: kaldirildi ? 0.65 : 1 }}>
-                  {duzenlenenPostId === g.id ? (
-                    <>
-                      <textarea value={duzenlenenMetin} onChange={e => setDuzenlenenMetin(e.target.value)} style={{ width:"100%", padding:"8px", borderRadius:"6px", border:"1px solid #ddd", fontSize:"14px", minHeight:"60px", boxSizing:"border-box", fontFamily:"inherit", marginBottom:"6px" }} />
-                      <div style={{ display:"flex", gap:"6px" }}>
-                        <button onClick={() => gonderiDuzenleKaydet(g.id)} style={{ padding:"4px 10px", background:"#10b981", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px", fontWeight:"600" }}>💾 Kaydet</button>
-                        <button onClick={() => { setDuzenlenenPostId(null); setDuzenlenenMetin(""); }} style={{ padding:"4px 10px", background:"#e5e7eb", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>Vazgec</button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {kaldirildi && (
-                        <div style={{ display:"flex", gap:"4px", flexWrap:"wrap", marginBottom:"4px" }}>
-                          {g.ogrenciSildi && <span style={{ background:"#e5e7eb", color:"#6b7280", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Silindi</span>}
-                          {g.veliKaldirdi && <span style={{ background:"#ede9fe", color:"#5b21b6", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Veli kaldirdi</span>}
-                          {g.ogretmenKaldirdi && <span style={{ background:"#fef3c7", color:"#92400e", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Ogretmen kaldirdi</span>}
-                          {g.adminSildi && <span style={{ background:"#fee2e2", color:"#991b1b", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Admin kaldirdi</span>}
+            <>
+              {gonderiler.map(g => {
+                const kaldirildi = g.ogrenciSildi || g.veliKaldirdi || g.ogretmenKaldirdi || g.adminSildi;
+                const bildirdimMi = bildirdigim.includes(g.id);
+                return (
+                  <div key={g.id} style={{ background: kaldirildi ? "#f3f4f6" : "#f9fafb", padding:"12px", borderRadius:"10px", marginBottom:"8px", position:"relative", opacity: kaldirildi ? 0.65 : 1 }}>
+                    {duzenlenenPostId === g.id ? (
+                      <>
+                        <textarea value={duzenlenenMetin} onChange={e => setDuzenlenenMetin(e.target.value)} style={{ width:"100%", padding:"8px", borderRadius:"6px", border:"1px solid #ddd", fontSize:"14px", minHeight:"60px", boxSizing:"border-box", fontFamily:"inherit", marginBottom:"6px" }} />
+                        <div style={{ display:"flex", gap:"6px" }}>
+                          <button onClick={() => gonderiDuzenleKaydet(g.id)} style={{ padding:"4px 10px", background:"#10b981", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px", fontWeight:"600" }}>💾 Kaydet</button>
+                          <button onClick={() => { setDuzenlenenPostId(null); setDuzenlenenMetin(""); }} style={{ padding:"4px 10px", background:"#e5e7eb", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>Vazgec</button>
                         </div>
-                      )}
-                      <p style={{ margin:"0 0 4px", fontSize:"14px", color: kaldirildi ? "#9ca3af" : "#374151", paddingRight: benimProfilim && !kaldirildi ? "90px" : "0", fontStyle: kaldirildi ? "italic" : "normal" }}>
-                        {kaldirildi ? "Bu gonderi kaldirildi." : g.icerik}
-                      </p>
-                      {g.tarih && (
-                        <small style={{ color:"#9ca3af", fontSize:"11px" }}>
-                          {new Date(g.tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(g.tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour:"2-digit", minute:"2-digit" })}
-                        </small>
-                      )}
-                      {/* Sikayet butonu - baskasinin profilinde, ogrenci ise */}
-                      {!benimProfilim && ogrenciyim && !bildirdimMi && (
-                        <div style={{ marginTop:"6px" }}>
-                          <button onClick={() => bildirimBaslat(g)}
-                            style={{ padding:"3px 10px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>
-                            🚩 Sikayet Et
-                          </button>
-                        </div>
-                      )}
-                      {!benimProfilim && ogrenciyim && bildirdimMi && (
-                        <div style={{ marginTop:"6px" }}>
-                          <span style={{ fontSize:"11px", color:"#92400e", background:"#fef3c7", padding:"2px 8px", borderRadius:"6px" }}>🚩 Bildirdin</span>
-                        </div>
-                      )}
-                      {benimProfilim && !kaldirildi && (
-                        <div style={{ position:"absolute", top:"8px", right:"8px", display:"flex", gap:"4px" }}>
-                          <button onClick={() => { setDuzenlenenPostId(g.id); setDuzenlenenMetin(g.icerik); }} style={{ padding:"4px 8px", background:"#4f46e5", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>✏️</button>
-                          <button onClick={() => gonderiSil(g.id)} style={{ padding:"4px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>🗑️</button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })
+                      </>
+                    ) : (
+                      <>
+                        {kaldirildi && (
+                          <div style={{ display:"flex", gap:"4px", flexWrap:"wrap", marginBottom:"4px" }}>
+                            {g.ogrenciSildi && <span style={{ background:"#e5e7eb", color:"#6b7280", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Silindi</span>}
+                            {g.veliKaldirdi && <span style={{ background:"#ede9fe", color:"#5b21b6", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Veli kaldirdi</span>}
+                            {g.ogretmenKaldirdi && <span style={{ background:"#fef3c7", color:"#92400e", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Ogretmen kaldirdi</span>}
+                            {g.adminSildi && <span style={{ background:"#fee2e2", color:"#991b1b", padding:"1px 6px", borderRadius:"4px", fontSize:"10px" }}>Admin kaldirdi</span>}
+                          </div>
+                        )}
+                        <p style={{ margin:"0 0 4px", fontSize:"14px", color: kaldirildi ? "#9ca3af" : "#374151", paddingRight: benimProfilim && !kaldirildi ? "90px" : "0", fontStyle: kaldirildi ? "italic" : "normal" }}>
+                          {kaldirildi ? "Bu gonderi kaldirildi." : g.icerik}
+                        </p>
+                        {g.tarih && (
+                          <small style={{ color:"#9ca3af", fontSize:"11px" }}>
+                            {new Date(g.tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(g.tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour:"2-digit", minute:"2-digit" })}
+                          </small>
+                        )}
+                        {!benimProfilim && ogrenciyim && !bildirdimMi && (
+                          <div style={{ marginTop:"6px" }}>
+                            <button onClick={() => bildirimBaslat(g)} style={{ padding:"3px 10px", background:"#fef3c7", color:"#92400e", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>🚩 Sikayet Et</button>
+                          </div>
+                        )}
+                        {!benimProfilim && ogrenciyim && bildirdimMi && (
+                          <div style={{ marginTop:"6px" }}>
+                            <span style={{ fontSize:"11px", color:"#92400e", background:"#fef3c7", padding:"2px 8px", borderRadius:"6px" }}>🚩 Bildirdin</span>
+                          </div>
+                        )}
+                        {benimProfilim && !kaldirildi && (
+                          <div style={{ position:"absolute", top:"8px", right:"8px", display:"flex", gap:"4px" }}>
+                            <button onClick={() => { setDuzenlenenPostId(g.id); setDuzenlenenMetin(g.icerik); }} style={{ padding:"4px 8px", background:"#4f46e5", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>✏️</button>
+                            <button onClick={() => gonderiSil(g.id)} style={{ padding:"4px 8px", background:"#ef4444", color:"white", border:"none", borderRadius:"6px", cursor:"pointer", fontSize:"11px" }}>🗑️</button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {dahaFazla && (
+                <button onClick={dahaFazlaGetir} disabled={dahaFazlaYukleniyor}
+                  style={{ width:"100%", padding:"10px", background:"#f3f4f6", color:"#374151", border:"none", borderRadius:"8px", cursor:"pointer", fontSize:"13px", fontWeight:"600", marginTop:"8px" }}>
+                  {dahaFazlaYukleniyor ? "Yukleniyor..." : "Daha fazla goster"}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
