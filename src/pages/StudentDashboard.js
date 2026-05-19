@@ -51,6 +51,14 @@ const ARKAPLANLAR = {
   buz: { deger: "linear-gradient(135deg, #74ebd5, #acb6e5)", tip: "gradient" }
 };
 
+// Medya tipini belirle
+const medyaTipiGetir = (url) => {
+  if (!url) return null;
+  const u = url.toLowerCase().split("?")[0];
+  if (u.includes("/video/") || u.match(/\.(mp4|webm|ogg|mov)$/)) return "video";
+  return "foto";
+};
+
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
   const [gonderiler, setGonderiler] = useState([]);
@@ -71,14 +79,14 @@ function StudentDashboard() {
   const [tumOgrenciler, setTumOgrenciler] = useState([]);
   const [aktifSekme, setAktifSekme] = useState("tumu");
   const [bildirdigim, setBildirdigim] = useState([]);
-  // Ogretmen sekmesi
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [gorulmemisOgretmenPost, setGorulmemisOgretmenPost] = useState(0);
   const [kullaniciFotolari, setKullaniciFotolari] = useState({});
-  // Foto yukleme
-  const [secilenFoto, setSecilenFoto] = useState(null);
-  const [fotoOnizleme, setFotoOnizleme] = useState(null);
-  const [fotoYukleniyor, setFotoYukleniyor] = useState(false);
+  // Medya yukleme (foto + video)
+  const [secilenMedya, setSecilenMedya] = useState(null);
+  const [medyaOnizleme, setMedyaOnizleme] = useState(null);
+  const [medyaTip, setMedyaTip] = useState(null); // "foto" | "video"
+  const [medyaYukleniyor, setMedyaYukleniyor] = useState(false);
   const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
 
   useEffect(() => {
@@ -125,7 +133,6 @@ function StudentDashboard() {
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(g => g.yazarUid === ogretmenUid && !g.adminSildi);
     setOgretmenGonderiler(liste);
-    // Gorulmemis sayisi - localStorage ile takip
     const gorulmusKey = "ogretmenPostGorulmus_" + auth.currentUser.uid;
     const gorulmusZaman = parseInt(localStorage.getItem(gorulmusKey) || "0");
     const yeni = liste.filter(g => g.tarih && g.tarih.seconds * 1000 > gorulmusZaman);
@@ -134,7 +141,6 @@ function StudentDashboard() {
 
   const ogretmenSekmeAc = () => {
     setAktifSekme("ogretmen");
-    // Goruldu olarak isaretle
     const gorulmusKey = "ogretmenPostGorulmus_" + auth.currentUser.uid;
     localStorage.setItem(gorulmusKey, Date.now().toString());
     setGorulmemisOgretmenPost(0);
@@ -145,7 +151,6 @@ function StudentDashboard() {
     const tumKullanicilar = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     const ogrenciler = tumKullanicilar.filter(u => u.role === "student" && u.onaylandi !== false && u.id !== auth.currentUser.uid);
     setTumOgrenciler(ogrenciler);
-    // Profil fotolarini kaydet
     const fotolar = {};
     snapshot.docs.forEach(d => {
       const data = d.data();
@@ -153,7 +158,6 @@ function StudentDashboard() {
     });
     setKullaniciFotolari(fotolar);
   };
-
 
   const bildirimleriGetir = async () => {
     const snapshot = await getDocs(collection(db, "reports"));
@@ -173,11 +177,7 @@ function StudentDashboard() {
     const snapshot = await getDocs(q);
     const liste = snapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g =>
-        !g.veliKaldirdi &&
-        !g.ogretmenKaldirdi &&
-        !g.adminSildi
-      );
+      .filter(g => !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
     setGonderiler(liste);
   };
 
@@ -224,31 +224,58 @@ function StudentDashboard() {
     await yorumlariGetir(postId);
   };
 
+  const medyaSec = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const isVideo = f.type.startsWith("video/");
+    const isFoto = f.type.startsWith("image/");
+    if (!isVideo && !isFoto) { alert("Sadece foto veya video yukleyebilirsiniz!"); return; }
+    const maxBoyut = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
+    const maxEtiket = isVideo ? "50MB" : "5MB";
+    if (f.size > maxBoyut) { alert("Max " + maxEtiket + "!"); return; }
+    setSecilenMedya(f);
+    setMedyaTip(isVideo ? "video" : "foto");
+    setMedyaOnizleme(URL.createObjectURL(f));
+    // input'u sifirla
+    e.target.value = "";
+  };
+
+  const medyaTemizle = () => {
+    setSecilenMedya(null);
+    setMedyaOnizleme(null);
+    setMedyaTip(null);
+  };
+
   const gonderiYap = async () => {
-    if (!gonderi.trim() && !secilenFoto) return;
+    if (!gonderi.trim() && !secilenMedya) return;
     if (gonderi.trim() && kufurKontrol(gonderi)) {
       setHataMesaj("⚠️ Paylasimda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
       setTimeout(() => setHataMesaj(""), 4000);
       return;
     }
     setYukleniyor(true);
-    let fotoUrl = null;
-    if (secilenFoto) {
+    let medyaUrl = null;
+    if (secilenMedya) {
       try {
-        setFotoYukleniyor(true);
+        setMedyaYukleniyor(true);
         const token = await auth.currentUser.getIdToken();
-        const key = "posts/" + auth.currentUser.uid + "_" + Date.now() + "." + secilenFoto.name.split(".").pop();
-        await fetch(WORKER_URL + "/upload/" + key, {
+        const ext = secilenMedya.name.split(".").pop();
+        const key = medyaTip === "video"
+          ? "posts/video_" + auth.currentUser.uid + "_" + Date.now() + "." + ext
+          : "posts/" + auth.currentUser.uid + "_" + Date.now() + "." + ext;
+        const endpoint = medyaTip === "video" ? "/upload-video/" : "/upload/";
+        await fetch(WORKER_URL + endpoint + key, {
           method: "PUT",
-          headers: { "Content-Type": secilenFoto.type, "Authorization": "Bearer " + token },
-          body: secilenFoto
+          headers: { "Content-Type": secilenMedya.type, "Authorization": "Bearer " + token },
+          body: secilenMedya
         });
-        fotoUrl = WORKER_URL + "/photo/" + key;
-        setFotoYukleniyor(false);
+        const pathPrefix = medyaTip === "video" ? "/video/" : "/photo/";
+        medyaUrl = WORKER_URL + pathPrefix + key;
+        setMedyaYukleniyor(false);
       } catch (err) {
-        alert("Foto yuklenemedi!");
+        alert("Medya yuklenemedi!");
         setYukleniyor(false);
-        setFotoYukleniyor(false);
+        setMedyaYukleniyor(false);
         return;
       }
     }
@@ -258,15 +285,14 @@ function StudentDashboard() {
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp(),
       begenenler: [],
-      fotoUrl: fotoUrl,
+      fotoUrl: medyaUrl,
       ogrenciSildi: false,
       veliKaldirdi: false,
       ogretmenKaldirdi: false,
       adminSildi: false
     });
     setGonderi("");
-    setSecilenFoto(null);
-    setFotoOnizleme(null);
+    medyaTemizle();
     await gonderileriGetir();
     setYukleniyor(false);
   };
@@ -376,7 +402,28 @@ function StudentDashboard() {
   const kartYazi = karanlikMod ? "#f3f4f6" : "#111827";
   const kartIkincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
 
-  // Gonderi karti - tekrar kullanilabilir
+  // Medya render yardimcisi
+  const MedyaGoster = ({ url, style }) => {
+    const tip = medyaTipiGetir(url);
+    if (tip === "video") {
+      return (
+        <video
+          src={url}
+          controls
+          style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", ...style }}
+        />
+      );
+    }
+    return (
+      <img
+        src={url}
+        alt="gonderi"
+        style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", cursor: "pointer", ...style }}
+        onClick={() => window.open(url, "_blank")}
+      />
+    );
+  };
+
   const GonderiKarti = ({ g, listeAdi }) => {
     const begenenler = g.begenenler || [];
     const benBegendimMi = begenenler.includes(auth.currentUser.uid);
@@ -396,10 +443,7 @@ function StudentDashboard() {
         ) : (
           <>
             {g.icerik && <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>{g.icerik}</p>}
-            {g.fotoUrl && (
-              <img src={g.fotoUrl} alt="gonderi" style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", cursor: "pointer" }}
-                onClick={() => window.open(g.fotoUrl, "_blank")} />
-            )}
+            {g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
           </>
         )}
         {bildirdimMi && (
@@ -426,7 +470,6 @@ function StudentDashboard() {
               style={{ padding: "4px 10px", background: benBegendimMi ? "#fee2e2" : (karanlikMod ? "#374151" : "#f3f4f6"), color: benBegendimMi ? "#ef4444" : kartIkincilYazi, border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
               {benBegendimMi ? "❤️" : "🤍"} {begenenler.length}
             </button>
-            {/* Ogretmen postunda yorum yok */}
             {!ogretmenPostu && (
               <button onClick={() => yorumToggle(g.id)}
                 style={{ padding: "4px 10px", background: "#e0e7ff", color: "#4f46e5", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
@@ -584,16 +627,15 @@ function StudentDashboard() {
               </span>
             )}
           </button>
-          {/* Ogretmen sekmesi - her ogrencide goster */}
           <button onClick={ogretmenSekmeAc}
-              style={{ flex: 1, padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ogretmen" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
-              🏫 Ogretmenim
-              {gorulmemisOgretmenPost > 0 && (
-                <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
-                  {gorulmemisOgretmenPost}
-                </span>
-              )}
-            </button>
+            style={{ flex: 1, padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ogretmen" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
+            🏫 Ogretmenim
+            {gorulmemisOgretmenPost > 0 && (
+              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
+                {gorulmemisOgretmenPost}
+              </span>
+            )}
+          </button>
         </div>
 
         {aktifSekme === "arkadaslar" && kullanici.gelenIstekler.length > 0 && (
@@ -617,35 +659,35 @@ function StudentDashboard() {
             <textarea placeholder="Ne dusunuyorsun?" value={gonderi} onChange={e => setGonderi(e.target.value)}
               style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "15px", resize: "vertical", minHeight: "80px", boxSizing: "border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
             {hataMesaj && <div style={{ marginTop: "8px", padding: "8px 12px", background: "#fee2e2", color: "#ef4444", borderRadius: "8px", fontSize: "13px" }}>{hataMesaj}</div>}
-            {fotoOnizleme && (
+
+            {/* Medya onizleme */}
+            {medyaOnizleme && (
               <div style={{ marginTop: "10px", position: "relative", display: "inline-block" }}>
-                <img src={fotoOnizleme} alt="onizleme" style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "8px", border: "1px solid #ddd" }} />
-                <button onClick={() => { setSecilenFoto(null); setFotoOnizleme(null); }}
+                {medyaTip === "video" ? (
+                  <video src={medyaOnizleme} controls style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "8px", border: "1px solid #ddd" }} />
+                ) : (
+                  <img src={medyaOnizleme} alt="onizleme" style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "8px", border: "1px solid #ddd" }} />
+                )}
+                <button onClick={medyaTemizle}
                   style={{ position: "absolute", top: "4px", right: "4px", background: "#ef4444", color: "white", border: "none", borderRadius: "50%", width: "24px", height: "24px", cursor: "pointer", fontSize: "12px", fontWeight: "700" }}>
                   ✕
                 </button>
               </div>
             )}
+
             <div style={{ display: "flex", gap: "10px", marginTop: "10px", alignItems: "center" }}>
               <label style={{ padding: "10px 16px", background: karanlikMod ? "#374151" : "#f3f4f6", color: kartYazi, border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" }}>
-                📷 Foto
-                <input type="file" accept="image/*" onChange={e => {
-                  const f = e.target.files[0];
-                  if (f) {
-                    if (f.size > 5 * 1024 * 1024) { alert("Max 5MB!"); return; }
-                    setSecilenFoto(f);
-                    setFotoOnizleme(URL.createObjectURL(f));
-                  }
-                }} style={{ display: "none" }} />
+                📷 Foto/Video
+                <input type="file" accept="image/*,video/*" onChange={medyaSec} style={{ display: "none" }} />
               </label>
-              <button onClick={gonderiYap} disabled={yukleniyor || fotoYukleniyor} style={{ padding: "10px 24px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "15px" }}>
-                {fotoYukleniyor ? "Foto yukleniyor..." : yukleniyor ? "Paylasiliyor..." : "Paylas"}
+              <button onClick={gonderiYap} disabled={yukleniyor || medyaYukleniyor}
+                style={{ padding: "10px 24px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "15px" }}>
+                {medyaYukleniyor ? "Yukleniyor..." : yukleniyor ? "Paylasiliyor..." : "Paylas"}
               </button>
             </div>
           </div>
         )}
 
-        {/* Ogretmen sekmesi icerigi */}
         {aktifSekme === "ogretmen" && (
           <div>
             {kullanici.ogretmenIsim && (
@@ -665,7 +707,6 @@ function StudentDashboard() {
           </div>
         )}
 
-        {/* Tumu ve Arkadaslar sekmeleri */}
         {aktifSekme !== "ogretmen" && (
           <div>
             {filtrelenmisGonderiler.length === 0 && aktifSekme === "arkadaslar" && (
