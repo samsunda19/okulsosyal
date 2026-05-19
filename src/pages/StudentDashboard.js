@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { db, auth } from "../firebase";
 import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { signOut } from "firebase/auth";
@@ -51,13 +51,157 @@ const ARKAPLANLAR = {
   buz: { deger: "linear-gradient(135deg, #74ebd5, #acb6e5)", tip: "gradient" }
 };
 
-// Medya tipini belirle
 const medyaTipiGetir = (url) => {
   if (!url) return null;
-  const u = url.toLowerCase().split("?")[0];
-  if (u.includes("/video/") || u.match(/\.(mp4|webm|ogg|mov)$/)) return "video";
+  if (url.includes("cloudflarestream.com")) return "stream";
   return "foto";
 };
+
+const MedyaGoster = React.memo(({ url }) => {
+  const tip = medyaTipiGetir(url);
+  if (tip === "stream") {
+    const embedUrl = url.includes("/iframe") ? url : url.replace("/manifest/video.m3u8", "/iframe");
+    return (
+      <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, marginBottom: "8px", borderRadius: "8px", overflow: "hidden" }}>
+        <iframe
+          src={embedUrl}
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
+          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+          allowFullScreen
+          title="video"
+        />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt="gonderi"
+      style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", cursor: "pointer" }}
+      onClick={() => window.open(url, "_blank")}
+    />
+  );
+});
+
+const GonderiKarti = React.memo(({
+  g, listeAdi,
+  kartArkaplan, kartYazi, kartIkincilYazi, karanlikMod,
+  kullaniciFotolari, kullaniciArkadaslar, bildirdigim, yorumlar, acikYorumlar, yeniYorum,
+  mevcutKullaniciUid,
+  onProfilAc, onBegeni, onYorumToggle, onYorumYap, onYorumMetinDegis, onYorumSil,
+  onGonderiSil, onBildirimBaslat
+}) => {
+  const begenenler = g.begenenler || [];
+  const benBegendimMi = begenenler.includes(mevcutKullaniciUid);
+  const benimPaylasimim = g.yazarUid === mevcutKullaniciUid;
+  const bildirdimMi = bildirdigim.includes(g.id);
+  const ogretmenPostu = listeAdi === "ogretmen";
+  const kaldirildi = g.ogrenciSildi || g.veliKaldirdi || g.ogretmenKaldirdi || g.adminSildi;
+
+  return (
+    <div style={{ background: kartArkaplan, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", opacity: kaldirildi ? 0.75 : 1 }}>
+      {ogretmenPostu && (
+        <div style={{ fontSize: "11px", color: "#4f46e5", background: "#e0e7ff", padding: "2px 8px", borderRadius: "6px", display: "inline-block", marginBottom: "6px" }}>
+          📋 Ogretmen Paylasimi
+        </div>
+      )}
+      {kaldirildi ? (
+        <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: kartIkincilYazi, fontStyle: "italic" }}>🗑️ Bu gonderi kaldirildi.</p>
+      ) : (
+        <>
+          {g.icerik && <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>{g.icerik}</p>}
+          {g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
+        </>
+      )}
+      {bildirdimMi && (
+        <div style={{ fontSize: "11px", color: "#92400e", background: "#fef3c7", padding: "3px 8px", borderRadius: "6px", display: "inline-block", marginBottom: "6px" }}>
+          🚩 Bu icerigi bildirdin
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }} onClick={() => onProfilAc(g.yazarUid)}>
+          {kullaniciFotolari[g.yazarUid] ? (
+            <img src={kullaniciFotolari[g.yazarUid]} alt="" style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e7eb" }} />
+          ) : (
+            <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "white", fontWeight: "700", flexShrink: 0 }}>
+              {(g.yazar || "?")[0].toUpperCase()}
+            </div>
+          )}
+          <small style={{ color: "#4f46e5", textDecoration: "underline" }}>
+            {g.yazar}{kullaniciArkadaslar.includes(g.yazarUid) && " 👥"}
+          </small>
+        </div>
+        <div style={{ display: "flex", gap: "6px" }}>
+          {!kaldirildi && (
+            <button onClick={() => onBegeni(g.id, begenenler, listeAdi)}
+              style={{ padding: "4px 10px", background: benBegendimMi ? "#fee2e2" : (karanlikMod ? "#374151" : "#f3f4f6"), color: benBegendimMi ? "#ef4444" : kartIkincilYazi, border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
+              {benBegendimMi ? "❤️" : "🤍"} {begenenler.length}
+            </button>
+          )}
+          {!ogretmenPostu && !kaldirildi && (
+            <button onClick={() => onYorumToggle(g.id)}
+              style={{ padding: "4px 10px", background: "#e0e7ff", color: "#4f46e5", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
+              💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
+            </button>
+          )}
+          {!benimPaylasimim && !bildirdimMi && (
+            <button onClick={() => onBildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
+              style={{ padding: "4px 10px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
+              🚩
+            </button>
+          )}
+          {benimPaylasimim && !kaldirildi && (
+            <button onClick={() => onGonderiSil(g.id, g.yazarUid)}
+              style={{ padding: "4px 10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
+              Sil
+            </button>
+          )}
+        </div>
+      </div>
+      {!ogretmenPostu && !kaldirildi && acikYorumlar[g.id] && (
+        <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: karanlikMod ? "1px solid #374151" : "1px solid #f0f4ff" }}>
+          {yorumlar[g.id] && yorumlar[g.id].map(y => {
+            const benimYorumum = y.yazarUid === mevcutKullaniciUid;
+            return (
+              <div key={y.id} style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "6px", position: "relative", opacity: y.silindi ? 0.6 : 1 }}>
+                {y.silindi ? (
+                  <p style={{ margin: "0 0 4px", fontSize: "13px", fontStyle: "italic", color: kartIkincilYazi }}>🗑️ Bu yorum kaldirildi.</p>
+                ) : (
+                  <p style={{ margin: "0 0 4px", fontSize: "14px", paddingRight: "60px", color: kartYazi }}>{y.icerik}</p>
+                )}
+                <small onClick={() => onProfilAc(y.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "12px" }}>{y.yazar}</small>
+                <div style={{ position: "absolute", top: "8px", right: "8px", display: "flex", gap: "4px" }}>
+                  {!benimYorumum && (
+                    <button onClick={() => onBildirimBaslat("comment", y.id, g.id, y.icerik, y.yazarUid, y.yazar)}
+                      style={{ padding: "2px 8px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "11px" }}>
+                      🚩
+                    </button>
+                  )}
+                  {benimYorumum && !y.silindi && (
+                    <button onClick={() => onYorumSil(g.id, y.id)}
+                      style={{ padding: "2px 8px", background: "#ef4444", color: "white", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "11px" }}>
+                      Sil
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+            <input type="text" placeholder="Yorum yaz..." value={yeniYorum[g.id] || ""}
+              onChange={e => onYorumMetinDegis(g.id, e.target.value)}
+              onKeyDown={e => e.key === "Enter" && onYorumYap(g.id)}
+              style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "13px", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
+            <button onClick={() => onYorumYap(g.id)}
+              style={{ padding: "8px 14px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}>
+              Gonder
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
 
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
@@ -82,16 +226,16 @@ function StudentDashboard() {
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [gorulmemisOgretmenPost, setGorulmemisOgretmenPost] = useState(0);
   const [kullaniciFotolari, setKullaniciFotolari] = useState({});
-  // Medya yukleme (foto + video)
   const [secilenMedya, setSecilenMedya] = useState(null);
   const [medyaOnizleme, setMedyaOnizleme] = useState(null);
-  const [medyaTip, setMedyaTip] = useState(null); // "foto" | "video"
+  const [medyaTip, setMedyaTip] = useState(null);
   const [medyaYukleniyor, setMedyaYukleniyor] = useState(false);
+  const arkadaslarRef = React.useRef([]);
   const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
 
   useEffect(() => {
     ilkYukle();
-    const interval = setInterval(kullaniciBilgisiGetir, 2000);
+    const interval = setInterval(kullaniciBilgisiGetir, 30000);
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -99,6 +243,7 @@ function StudentDashboard() {
     await kullaniciBilgisiGetir();
     ogrencileriGetir();
     bildirimleriGetir();
+    gonderileriGetir();
   };
 
   const kullaniciBilgisiGetir = async () => {
@@ -107,6 +252,7 @@ function StudentDashboard() {
     if (userDoc.exists()) {
       const data = userDoc.data();
       const ogretmenUid = data.ogretmenUid || null;
+      arkadaslarRef.current = data.arkadaslar || [];
       setKullanici({
         isim: data.isim || auth.currentUser.email,
         arkadaslar: data.arkadaslar || [],
@@ -122,7 +268,6 @@ function StudentDashboard() {
       if (ogretmenUid) {
         ogretmenGonderileriniGetir(ogretmenUid);
       }
-      gonderileriGetir();
     }
   };
 
@@ -188,41 +333,42 @@ function StudentDashboard() {
     setYorumlar(prev => ({ ...prev, [postId]: liste }));
   };
 
-  const yorumToggle = async (postId) => {
-    const acik = !acikYorumlar[postId];
-    setAcikYorumlar(prev => ({ ...prev, [postId]: acik }));
-    if (acik && !yorumlar[postId]) {
-      await yorumlariGetir(postId);
-    }
-  };
-
-  const yorumYap = async (postId) => {
-    const metin = yeniYorum[postId];
-    if (!metin || !metin.trim()) return;
-    if (kufurKontrol(metin)) {
-      alert("⚠️ Yorumda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
-      return;
-    }
-    await addDoc(collection(db, "posts", postId, "comments"), {
-      icerik: metin,
-      yazar: kullanici.isim || auth.currentUser.email,
-      yazarUid: auth.currentUser.uid,
-      tarih: serverTimestamp(),
-      silindi: false
+  const yorumToggle = useCallback(async (postId) => {
+    setAcikYorumlar(prev => {
+      const acik = !prev[postId];
+      if (acik) yorumlariGetir(postId);
+      return { ...prev, [postId]: acik };
     });
-    setYeniYorum(prev => ({ ...prev, [postId]: "" }));
-    await yorumlariGetir(postId);
-  };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const yorumSil = async (postId, yorumId) => {
+  const yorumYap = useCallback(async (postId) => {
+    setYeniYorum(prev => {
+      const metin = prev[postId];
+      if (!metin || !metin.trim()) return prev;
+      if (KUFUR_LISTESI.some(k => metin.toLowerCase().includes(k))) {
+        alert("⚠️ Yorumda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
+        return prev;
+      }
+      addDoc(collection(db, "posts", postId, "comments"), {
+        icerik: metin,
+        yazar: auth.currentUser.displayName || auth.currentUser.email,
+        yazarUid: auth.currentUser.uid,
+        tarih: serverTimestamp(),
+        silindi: false
+      }).then(() => yorumlariGetir(postId));
+      return { ...prev, [postId]: "" };
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const yorumSil = useCallback(async (postId, yorumId) => {
     await updateDoc(doc(db, "posts", postId, "comments", yorumId), {
       silindi: true,
       silinmeTarihi: serverTimestamp(),
       silenUid: auth.currentUser.uid,
       silenRol: "student"
     });
-    await yorumlariGetir(postId);
-  };
+    yorumlariGetir(postId);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const medyaSec = (e) => {
     const f = e.target.files[0];
@@ -231,12 +377,10 @@ function StudentDashboard() {
     const isFoto = f.type.startsWith("image/");
     if (!isVideo && !isFoto) { alert("Sadece foto veya video yukleyebilirsiniz!"); return; }
     const maxBoyut = isVideo ? 50 * 1024 * 1024 : 5 * 1024 * 1024;
-    const maxEtiket = isVideo ? "50MB" : "5MB";
-    if (f.size > maxBoyut) { alert("Max " + maxEtiket + "!"); return; }
+    if (f.size > maxBoyut) { alert(isVideo ? "Max 50MB!" : "Max 5MB!"); return; }
     setSecilenMedya(f);
     setMedyaTip(isVideo ? "video" : "foto");
     setMedyaOnizleme(URL.createObjectURL(f));
-    // input'u sifirla
     e.target.value = "";
   };
 
@@ -255,30 +399,42 @@ function StudentDashboard() {
     }
     setYukleniyor(true);
     let medyaUrl = null;
+
     if (secilenMedya) {
       try {
         setMedyaYukleniyor(true);
         const token = await auth.currentUser.getIdToken();
-        const ext = secilenMedya.name.split(".").pop();
-        const key = medyaTip === "video"
-          ? "posts/video_" + auth.currentUser.uid + "_" + Date.now() + "." + ext
-          : "posts/" + auth.currentUser.uid + "_" + Date.now() + "." + ext;
-        const endpoint = medyaTip === "video" ? "/upload-video/" : "/upload/";
-        await fetch(WORKER_URL + endpoint + key, {
-          method: "PUT",
-          headers: { "Content-Type": secilenMedya.type, "Authorization": "Bearer " + token },
-          body: secilenMedya
-        });
-        const pathPrefix = medyaTip === "video" ? "/video/" : "/photo/";
-        medyaUrl = WORKER_URL + pathPrefix + key;
+
+        if (medyaTip === "video") {
+          const formData = new FormData();
+          formData.append("file", secilenMedya, secilenMedya.name);
+          const response = await fetch(WORKER_URL + "/upload-video", {
+            method: "POST",
+            headers: { "Authorization": "Bearer " + token },
+            body: formData
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Video yuklenemedi");
+          medyaUrl = data.embedUrl;
+        } else {
+          const ext = secilenMedya.name.split(".").pop();
+          const key = "posts/" + auth.currentUser.uid + "_" + Date.now() + "." + ext;
+          await fetch(WORKER_URL + "/upload/" + key, {
+            method: "PUT",
+            headers: { "Content-Type": secilenMedya.type, "Authorization": "Bearer " + token },
+            body: secilenMedya
+          });
+          medyaUrl = WORKER_URL + "/photo/" + key;
+        }
         setMedyaYukleniyor(false);
       } catch (err) {
-        alert("Medya yuklenemedi!");
+        alert("Medya yuklenemedi: " + err.message);
         setYukleniyor(false);
         setMedyaYukleniyor(false);
         return;
       }
     }
+
     await addDoc(collection(db, "posts"), {
       icerik: gonderi,
       yazar: kullanici.isim || auth.currentUser.email,
@@ -297,7 +453,7 @@ function StudentDashboard() {
     setYukleniyor(false);
   };
 
-  const gonderiSil = async (id, yazarUid) => {
+  const gonderiSil = useCallback(async (id, yazarUid) => {
     if (yazarUid !== auth.currentUser.uid) return;
     await updateDoc(doc(db, "posts", id), {
       ogrenciSildi: true,
@@ -305,10 +461,10 @@ function StudentDashboard() {
       silenUid: auth.currentUser.uid,
       silenRol: "student"
     });
-    setGonderiler(prev => prev.filter(g => g.id !== id));
-  };
+    setGonderiler(prev => prev.map(g => g.id === id ? { ...g, ogrenciSildi: true } : g));
+  }, []);
 
-  const begeniToggle = async (postId, begenenler, listeAdi) => {
+  const begeniToggle = useCallback(async (postId, begenenler, listeAdi) => {
     const benBegendimMi = begenenler && begenenler.includes(auth.currentUser.uid);
     const koleksiyon = listeAdi === "ogretmen" ? "duyurular" : "posts";
     if (benBegendimMi) {
@@ -323,19 +479,16 @@ function StudentDashboard() {
         : [...(g.begenenler || []), auth.currentUser.uid];
       return { ...g, begenenler: yeniBegenenler };
     });
-    if (listeAdi === "ogretmen") {
-      setOgretmenGonderiler(prev => guncelle(prev));
-    } else {
-      setGonderiler(prev => guncelle(prev));
-    }
-  };
+    if (listeAdi === "ogretmen") setOgretmenGonderiler(prev => guncelle(prev));
+    else setGonderiler(prev => guncelle(prev));
+  }, []);
 
-  const bildirimBaslat = (tip, icerikId, postId, icerikMetni, yazarUid, yazar) => {
+  const bildirimBaslat = useCallback((tip, icerikId, postId, icerikMetni, yazarUid, yazar) => {
     setBildirimModal({ tip, icerikId, postId, icerikMetni, yazarUid, yazar });
     setBildirimAdimi(1);
     setSecilenKategori(null);
     setDigerSebep("");
-  };
+  }, []);
 
   const bildirimGonder = async (iyiMisin = null) => {
     if (secilenKategori.id === "diger" && !digerSebep.trim()) {
@@ -368,6 +521,12 @@ function StudentDashboard() {
     setBildirimModal(null);
     alert("✅ Bildirimin alindi! Veli ve ogretmenlerin bilgilendirildi.");
   };
+
+  const onYorumMetinDegisCallback = useCallback((postId, val) => {
+    setYeniYorum(prev => ({ ...prev, [postId]: val }));
+  }, []);
+
+  const onProfilAcCallback = useCallback((uid) => setSecilenProfil(uid), []);
 
   const normalize = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -402,138 +561,22 @@ function StudentDashboard() {
   const kartYazi = karanlikMod ? "#f3f4f6" : "#111827";
   const kartIkincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
 
-  // Medya render yardimcisi
-  const MedyaGoster = ({ url, style }) => {
-    const tip = medyaTipiGetir(url);
-    if (tip === "video") {
-      return (
-        <video
-          src={url}
-          controls
-          style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", ...style }}
-        />
-      );
-    }
-    return (
-      <img
-        src={url}
-        alt="gonderi"
-        style={{ maxWidth: "100%", borderRadius: "8px", marginBottom: "8px", cursor: "pointer", ...style }}
-        onClick={() => window.open(url, "_blank")}
-      />
-    );
-  };
-
-  const GonderiKarti = ({ g, listeAdi }) => {
-    const begenenler = g.begenenler || [];
-    const benBegendimMi = begenenler.includes(auth.currentUser.uid);
-    const benimPaylasimim = g.yazarUid === auth.currentUser.uid;
-    const bildirdimMi = bildirdigim.includes(g.id);
-    const ogretmenPostu = listeAdi === "ogretmen";
-
-    return (
-      <div style={{ background: kartArkaplan, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", opacity: g.ogrenciSildi ? 0.75 : 1 }}>
-        {ogretmenPostu && (
-          <div style={{ fontSize: "11px", color: "#4f46e5", background: "#e0e7ff", padding: "2px 8px", borderRadius: "6px", display: "inline-block", marginBottom: "6px" }}>
-            📋 Ogretmen Paylasimi
-          </div>
-        )}
-        {g.ogrenciSildi ? (
-          <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: kartIkincilYazi, fontStyle: "italic" }}>🗑️ Bu gonderi kaldirildi.</p>
-        ) : (
-          <>
-            {g.icerik && <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>{g.icerik}</p>}
-            {g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
-          </>
-        )}
-        {bildirdimMi && (
-          <div style={{ fontSize: "11px", color: "#92400e", background: "#fef3c7", padding: "3px 8px", borderRadius: "6px", display: "inline-block", marginBottom: "6px" }}>
-            🚩 Bu icerigi bildirdin
-          </div>
-        )}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}
-            onClick={() => setSecilenProfil(g.yazarUid)}>
-            {kullaniciFotolari[g.yazarUid] ? (
-              <img src={kullaniciFotolari[g.yazarUid]} alt="" style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e7eb" }} />
-            ) : (
-              <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "white", fontWeight: "700", flexShrink: 0 }}>
-                {(g.yazar || "?")[0].toUpperCase()}
-              </div>
-            )}
-            <small style={{ color: "#4f46e5", textDecoration: "underline" }}>
-              {g.yazar}{kullanici.arkadaslar.includes(g.yazarUid) && " 👥"}
-            </small>
-          </div>
-          <div style={{ display: "flex", gap: "6px" }}>
-            <button onClick={() => begeniToggle(g.id, begenenler, listeAdi)}
-              style={{ padding: "4px 10px", background: benBegendimMi ? "#fee2e2" : (karanlikMod ? "#374151" : "#f3f4f6"), color: benBegendimMi ? "#ef4444" : kartIkincilYazi, border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
-              {benBegendimMi ? "❤️" : "🤍"} {begenenler.length}
-            </button>
-            {!ogretmenPostu && (
-              <button onClick={() => yorumToggle(g.id)}
-                style={{ padding: "4px 10px", background: "#e0e7ff", color: "#4f46e5", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
-                💬 {yorumlar[g.id] ? yorumlar[g.id].length : ""} Yorum
-              </button>
-            )}
-            {!benimPaylasimim && !bildirdimMi && (
-              <button onClick={() => bildirimBaslat("post", g.id, g.id, g.icerik, g.yazarUid, g.yazar)}
-                style={{ padding: "4px 10px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
-                🚩
-              </button>
-            )}
-            {benimPaylasimim && !g.ogrenciSildi && (
-              <button onClick={() => gonderiSil(g.id, g.yazarUid)}
-                style={{ padding: "4px 10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
-                Sil
-              </button>
-            )}
-          </div>
-        </div>
-        {!ogretmenPostu && acikYorumlar[g.id] && (
-          <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: karanlikMod ? "1px solid #374151" : "1px solid #f0f4ff" }}>
-            {yorumlar[g.id] && yorumlar[g.id].map(y => {
-              const benimYorumum = y.yazarUid === auth.currentUser.uid;
-              return (
-                <div key={y.id} style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "6px", position: "relative", opacity: y.silindi ? 0.6 : 1 }}>
-                  {y.silindi ? (
-                    <p style={{ margin: "0 0 4px", fontSize: "13px", fontStyle: "italic", color: kartIkincilYazi }}>🗑️ Bu yorum kaldirildi.</p>
-                  ) : (
-                    <p style={{ margin: "0 0 4px", fontSize: "14px", paddingRight: "60px", color: kartYazi }}>{y.icerik}</p>
-                  )}
-                  <small onClick={() => setSecilenProfil(y.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "12px" }}>{y.yazar}</small>
-                  <div style={{ position: "absolute", top: "8px", right: "8px", display: "flex", gap: "4px" }}>
-                    {!benimYorumum && (
-                      <button onClick={() => bildirimBaslat("comment", y.id, g.id, y.icerik, y.yazarUid, y.yazar)}
-                        style={{ padding: "2px 8px", background: "#fef3c7", color: "#92400e", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "11px" }}>
-                        🚩
-                      </button>
-                    )}
-                    {benimYorumum && !y.silindi && (
-                      <button onClick={() => yorumSil(g.id, y.id)}
-                        style={{ padding: "2px 8px", background: "#ef4444", color: "white", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "11px" }}>
-                        Sil
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-              <input type="text" placeholder="Yorum yaz..." value={yeniYorum[g.id] || ""}
-                onChange={e => setYeniYorum(prev => ({ ...prev, [g.id]: e.target.value }))}
-                onKeyDown={e => e.key === "Enter" && yorumYap(g.id)}
-                style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "13px", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
-              <button onClick={() => yorumYap(g.id)}
-                style={{ padding: "8px 14px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}>
-                Gonder
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
+  const gonderiKartiProps = React.useMemo(() => ({
+    kartArkaplan, kartYazi, kartIkincilYazi, karanlikMod,
+    kullaniciFotolari,
+    kullaniciArkadaslar: arkadaslarRef.current,
+    bildirdigim, yorumlar, acikYorumlar, yeniYorum,
+    mevcutKullaniciUid: auth.currentUser.uid,
+    onProfilAc: onProfilAcCallback,
+    onBegeni: begeniToggle,
+    onYorumToggle: yorumToggle,
+    onYorumYap: yorumYap,
+    onYorumMetinDegis: onYorumMetinDegisCallback,
+    onYorumSil: yorumSil,
+    onGonderiSil: gonderiSil,
+    onBildirimBaslat: bildirimBaslat
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [kartArkaplan, kartYazi, kartIkincilYazi, karanlikMod, kullaniciFotolari, bildirdigim, yorumlar, acikYorumlar, yeniYorum]);
 
   return (
     <div style={{ minHeight: "100vh", ...arkaplanStili }}>
@@ -612,7 +655,6 @@ function StudentDashboard() {
           )}
         </div>
 
-        {/* Sekmeler */}
         <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
           <button onClick={() => setAktifSekme("tumu")}
             style={{ flex: 1, padding: "10px", background: aktifSekme === "tumu" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "tumu" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
@@ -659,8 +701,6 @@ function StudentDashboard() {
             <textarea placeholder="Ne dusunuyorsun?" value={gonderi} onChange={e => setGonderi(e.target.value)}
               style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "15px", resize: "vertical", minHeight: "80px", boxSizing: "border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
             {hataMesaj && <div style={{ marginTop: "8px", padding: "8px 12px", background: "#fee2e2", color: "#ef4444", borderRadius: "8px", fontSize: "13px" }}>{hataMesaj}</div>}
-
-            {/* Medya onizleme */}
             {medyaOnizleme && (
               <div style={{ marginTop: "10px", position: "relative", display: "inline-block" }}>
                 {medyaTip === "video" ? (
@@ -674,7 +714,6 @@ function StudentDashboard() {
                 </button>
               </div>
             )}
-
             <div style={{ display: "flex", gap: "10px", marginTop: "10px", alignItems: "center" }}>
               <label style={{ padding: "10px 16px", background: karanlikMod ? "#374151" : "#f3f4f6", color: kartYazi, border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" }}>
                 📷 Foto/Video
@@ -702,7 +741,7 @@ function StudentDashboard() {
                 <p>Ogretmenin henuz paylasim yapmadi.</p>
               </div>
             ) : (
-              ogretmenGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="ogretmen" />)
+              ogretmenGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="ogretmen" {...gonderiKartiProps} />)
             )}
           </div>
         )}
@@ -714,7 +753,7 @@ function StudentDashboard() {
                 <p>Henuz arkadasin yok veya arkadaslarin paylasim yapmadi.</p>
               </div>
             )}
-            {filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" />)}
+            {filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" {...gonderiKartiProps} />)}
           </div>
         )}
       </div>
