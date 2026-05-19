@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { db, auth } from "../firebase";
-import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, arrayUnion, arrayRemove, limit, startAfter } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 import DM from "./DM";
 import boslukResmi from "../background2.png";
+
+const GONDERI_LIMIT = 20;
 
 const KUFUR_LISTESI = [
   "amk", "aq", "amq", "amina", "amini", "amcik", "amcik", "anasini",
@@ -220,6 +222,9 @@ const GonderiKarti = React.memo(({
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
   const [gonderiler, setGonderiler] = useState([]);
+  const [sonDoc, setSonDoc] = useState(null);
+  const [dahaFazla, setDahaFazla] = useState(false);
+  const [dahaFazlaYukleniyor, setDahaFazlaYukleniyor] = useState(false);
   const [yukleniyor, setYukleniyor] = useState(false);
   const [kullanici, setKullanici] = useState({ isim: "", arkadaslar: [], gelenIstekler: [], gidenIstekler: [], engellenenler: [], okul: "", ogretmenUid: null, ogretmenIsim: "" });
   const [karanlikMod, setKaranlikMod] = useState(false);
@@ -244,7 +249,10 @@ function StudentDashboard() {
   const [medyaOnizleme, setMedyaOnizleme] = useState(null);
   const [medyaTip, setMedyaTip] = useState(null);
   const [medyaYukleniyor, setMedyaYukleniyor] = useState(false);
-  const arkadaslarRef = React.useRef([]);
+  const arkadaslarRef = useRef([]);
+  const sonDocRef = useRef(null);
+  const dahaFazlaRef = useRef(false);
+  const yukleniyor2Ref = useRef(false);
   const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
 
   useEffect(() => {
@@ -253,11 +261,25 @@ function StudentDashboard() {
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Infinite scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (yukleniyor2Ref.current || !dahaFazlaRef.current) return;
+      const scrolled = window.scrollY + window.innerHeight;
+      const total = document.documentElement.scrollHeight;
+      if (scrolled >= total - 300) {
+        dahaFazlaGetir();
+      }
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const ilkYukle = async () => {
     await kullaniciBilgisiGetir();
     ogrencileriGetir();
     bildirimleriGetir();
-    gonderileriGetir();
+    await ilkGonderileriGetir();
   };
 
   const kullaniciBilgisiGetir = async () => {
@@ -279,10 +301,47 @@ function StudentDashboard() {
       });
       setKaranlikMod(data.karanlikMod || false);
       setArkaplanId(data.arkaplan || "varsayilan");
-      if (ogretmenUid) {
-        ogretmenGonderileriniGetir(ogretmenUid);
-      }
+      if (ogretmenUid) ogretmenGonderileriniGetir(ogretmenUid);
     }
+  };
+
+  const ilkGonderileriGetir = async () => {
+    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), limit(GONDERI_LIMIT));
+    const snapshot = await getDocs(q);
+    const liste = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
+    setGonderiler(liste);
+    const sonSayfaDoc = snapshot.docs[snapshot.docs.length - 1] || null;
+    sonDocRef.current = sonSayfaDoc;
+    setSonDoc(sonSayfaDoc);
+    const daha = snapshot.docs.length === GONDERI_LIMIT;
+    dahaFazlaRef.current = daha;
+    setDahaFazla(daha);
+  };
+
+  const dahaFazlaGetir = async () => {
+    if (yukleniyor2Ref.current || !sonDocRef.current) return;
+    yukleniyor2Ref.current = true;
+    setDahaFazlaYukleniyor(true);
+    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), startAfter(sonDocRef.current), limit(GONDERI_LIMIT));
+    const snapshot = await getDocs(q);
+    const liste = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
+    setGonderiler(prev => [...prev, ...liste]);
+    const sonSayfaDoc = snapshot.docs[snapshot.docs.length - 1] || null;
+    sonDocRef.current = sonSayfaDoc;
+    setSonDoc(sonSayfaDoc);
+    const daha = snapshot.docs.length === GONDERI_LIMIT;
+    dahaFazlaRef.current = daha;
+    setDahaFazla(daha);
+    yukleniyor2Ref.current = false;
+    setDahaFazlaYukleniyor(false);
+  };
+
+  const gonderileriGetir = async () => {
+    await ilkGonderileriGetir();
   };
 
   const ogretmenGonderileriniGetir = async (ogretmenUid) => {
@@ -334,15 +393,6 @@ function StudentDashboard() {
     return KUFUR_LISTESI.some(kufur => kucukMetin.includes(kufur));
   };
 
-  const gonderileriGetir = async () => {
-    const q = query(collection(db, "posts"), orderBy("tarih", "desc"));
-    const snapshot = await getDocs(q);
-    const liste = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
-    setGonderiler(liste);
-  };
-
   const yorumlariGetir = async (postId) => {
     const q = query(collection(db, "posts", postId, "comments"), orderBy("tarih", "asc"));
     const snapshot = await getDocs(q);
@@ -379,10 +429,8 @@ function StudentDashboard() {
 
   const yorumSil = useCallback(async (postId, yorumId) => {
     await updateDoc(doc(db, "posts", postId, "comments", yorumId), {
-      silindi: true,
-      silinmeTarihi: serverTimestamp(),
-      silenUid: auth.currentUser.uid,
-      silenRol: "student"
+      silindi: true, silinmeTarihi: serverTimestamp(),
+      silenUid: auth.currentUser.uid, silenRol: "student"
     });
     yorumlariGetir(postId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -421,7 +469,6 @@ function StudentDashboard() {
       try {
         setMedyaYukleniyor(true);
         const token = await auth.currentUser.getIdToken();
-
         if (medyaTip === "video") {
           const formData = new FormData();
           formData.append("file", secilenMedya, secilenMedya.name);
@@ -473,12 +520,10 @@ function StudentDashboard() {
   const gonderiSil = useCallback(async (id, yazarUid) => {
     if (yazarUid !== auth.currentUser.uid) return;
     await updateDoc(doc(db, "posts", id), {
-      ogrenciSildi: true,
-      silinmeTarihi: serverTimestamp(),
-      silenUid: auth.currentUser.uid,
-      silenRol: "student"
+      ogrenciSildi: true, silinmeTarihi: serverTimestamp(),
+      silenUid: auth.currentUser.uid, silenRol: "student"
     });
-    setGonderiler(prev => prev.map(g => g.id === id ? { ...g, ogrenciSildi: true } : g));
+    setGonderiler(prev => prev.filter(g => g.id !== id));
   }, []);
 
   const begeniToggle = useCallback(async (postId, begenenler, listeAdi) => {
@@ -528,12 +573,8 @@ function StudentDashboard() {
       iyiMisin: iyiMisin,
       acil: iyiMisin === "yardim",
       tarih: serverTimestamp(),
-      okundu: false,
-      veliGordu: false,
-      veliSildi: false,
-      ogretmenGordu: false,
-      ogretmenSildi: false,
-      adminaIletti: false
+      okundu: false, veliGordu: false, veliSildi: false,
+      ogretmenGordu: false, ogretmenSildi: false, adminaIletti: false
     });
     setBildirdigim(prev => [...prev, bildirimModal.postId]);
     setBildirimModal(null);
@@ -807,6 +848,16 @@ function StudentDashboard() {
               </div>
             )}
             {filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" {...gonderiKartiProps} />)}
+            {dahaFazlaYukleniyor && (
+              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "13px" }}>
+                Yukleniyor...
+              </div>
+            )}
+            {!dahaFazla && gonderiler.length > 0 && aktifSekme !== "arkadaslar" && (
+              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "12px" }}>
+                Tum paylasimlar gosterildi
+              </div>
+            )}
           </div>
         )}
       </div>

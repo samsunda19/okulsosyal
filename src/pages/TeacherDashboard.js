@@ -4,6 +4,8 @@ import { doc, getDocFromServer, getDoc, collection, getDocs, addDoc, orderBy, qu
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 
+const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
+
 const KUFUR_LISTESI = [
   "amk", "aq", "amq", "amina", "amini", "amcik", "anasini",
   "siktir", "siktiret", "sikim", "sikme", "siker", "sikiyim", "sikerim",
@@ -23,9 +25,31 @@ const MedyaGoster = ({ url }) => {
       </div>
     );
   }
+  // Belge mi kontrol et
+  const belgeUzantilari = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt"];
+  const belge = belgeUzantilari.some(u => url.toLowerCase().includes(u));
+  if (belge) {
+    const dosyaAdi = url.split("/").pop().split("?")[0];
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer"
+        style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "8px", padding: "8px 12px", background: "#e0e7ff", color: "#4f46e5", borderRadius: "8px", textDecoration: "none", fontSize: "13px", fontWeight: "600" }}>
+        📄 {dosyaAdi}
+      </a>
+    );
+  }
   return (
     <img src={url} alt="gonderi" style={{ maxWidth: "100%", borderRadius: "8px", marginTop: "8px", cursor: "pointer" }}
-      onClick={() => window.open(url, "_blank")} />
+      onClick={() => {
+        const overlay = document.createElement("div");
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer";
+        const img = document.createElement("img");
+        img.src = url;
+        img.style.cssText = "max-width:90%;max-height:90vh;border-radius:12px;object-fit:contain";
+        overlay.appendChild(img);
+        overlay.onclick = () => document.body.removeChild(overlay);
+        document.body.appendChild(overlay);
+      }}
+    />
   );
 };
 
@@ -48,6 +72,18 @@ function TeacherDashboard() {
   const [yeniGonderi, setYeniGonderi] = useState("");
   const [gonderiYukleniyor, setGonderiYukleniyor] = useState(false);
   const [hataMesaj, setHataMesaj] = useState("");
+  const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("teacherKaranlikMod") === "true");
+  // Medya
+  const [secilenMedya, setSecilenMedya] = useState(null);
+  const [medyaOnizleme, setMedyaOnizleme] = useState(null);
+  const [medyaTip, setMedyaTip] = useState(null);
+  const [medyaYukleniyor, setMedyaYukleniyor] = useState(false);
+
+  const bg = karanlikMod ? "#111827" : "#f9fafb";
+  const kartBg = karanlikMod ? "#1f2937" : "white";
+  const yaziRenk = karanlikMod ? "#f3f4f6" : "#111827";
+  const ikincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
+  const borderRenk = karanlikMod ? "#374151" : "#e5e7eb";
 
   useEffect(() => {
     verileriGetir();
@@ -65,7 +101,7 @@ function TeacherDashboard() {
     const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
     const tumPosts = postSnapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g => g.yazarUid === auth.currentUser.uid && !g.adminSildi);
+      .filter(g => g.yazarUid === auth.currentUser.uid && !g.adminSildi && !g.ogretmenKaldirdi);
     setGonderiler(tumPosts);
 
     const userSnapshot = await getDocs(collection(db, "users"));
@@ -88,23 +124,85 @@ function TeacherDashboard() {
     return KUFUR_LISTESI.some(k => kucuk.includes(k));
   };
 
+  const medyaSec = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const isVideo = f.type.startsWith("video/");
+    const isFoto = f.type.startsWith("image/");
+    const isBelge = f.type.includes("pdf") || f.type.includes("word") || f.type.includes("excel") ||
+      f.type.includes("powerpoint") || f.type.includes("text") || f.type.includes("officedocument");
+    if (!isVideo && !isFoto && !isBelge) { alert("Foto, video veya belge yukleyebilirsiniz!"); return; }
+    const maxBoyut = isVideo ? 50 * 1024 * 1024 : 20 * 1024 * 1024;
+    if (f.size > maxBoyut) { alert(isVideo ? "Max 50MB!" : "Max 20MB!"); return; }
+    setSecilenMedya(f);
+    setMedyaTip(isVideo ? "video" : isFoto ? "foto" : "belge");
+    if (isFoto) setMedyaOnizleme(URL.createObjectURL(f));
+    else setMedyaOnizleme(null);
+    e.target.value = "";
+  };
+
+  const medyaTemizle = () => {
+    setSecilenMedya(null);
+    setMedyaOnizleme(null);
+    setMedyaTip(null);
+  };
+
   const gonderiYap = async () => {
-    if (!yeniGonderi.trim()) return;
-    if (kufurKontrol(yeniGonderi)) {
+    if (!yeniGonderi.trim() && !secilenMedya) return;
+    if (yeniGonderi.trim() && kufurKontrol(yeniGonderi)) {
       setHataMesaj("⚠️ Uygunsuz kelime tespit edildi!");
       setTimeout(() => setHataMesaj(""), 3000);
       return;
     }
     setGonderiYukleniyor(true);
+    let medyaUrl = null;
+
+    if (secilenMedya) {
+      try {
+        setMedyaYukleniyor(true);
+        const token = await auth.currentUser.getIdToken();
+        if (medyaTip === "video") {
+          const formData = new FormData();
+          formData.append("file", secilenMedya, secilenMedya.name);
+          const response = await fetch(WORKER_URL + "/upload-video", {
+            method: "POST",
+            headers: { "Authorization": "Bearer " + token },
+            body: formData
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Video yuklenemedi");
+          medyaUrl = data.embedUrl;
+        } else {
+          const klasor = medyaTip === "belge" ? "belgeler" : "posts";
+          const ext = secilenMedya.name.split(".").pop();
+          const key = klasor + "/" + auth.currentUser.uid + "_" + Date.now() + "." + ext;
+          await fetch(WORKER_URL + "/upload/" + key, {
+            method: "PUT",
+            headers: { "Content-Type": secilenMedya.type, "Authorization": "Bearer " + token },
+            body: secilenMedya
+          });
+          medyaUrl = WORKER_URL + "/photo/" + key;
+        }
+        setMedyaYukleniyor(false);
+      } catch (err) {
+        alert("Medya yuklenemedi: " + err.message);
+        setGonderiYukleniyor(false);
+        setMedyaYukleniyor(false);
+        return;
+      }
+    }
+
     await addDoc(collection(db, "duyurular"), {
       icerik: yeniGonderi,
       yazar: ogretmenIsmi,
       yazarUid: auth.currentUser.uid,
       tarih: serverTimestamp(),
       begenenler: [],
+      fotoUrl: medyaUrl,
       adminSildi: false
     });
     setYeniGonderi("");
+    medyaTemizle();
     const postSnapshot = await getDocs(query(collection(db, "duyurular"), orderBy("tarih", "desc")));
     const tumPosts = postSnapshot.docs
       .map(d => ({ id: d.id, ...d.data() }))
@@ -116,8 +214,7 @@ function TeacherDashboard() {
   const gonderiSil = async (gonderiId) => {
     if (!window.confirm("Bu paylasimi silmek istediginizden emin misiniz?")) return;
     await updateDoc(doc(db, "duyurular", gonderiId), {
-      ogretmenKaldirdi: true,
-      ogretmenKaldirmaTarihi: serverTimestamp(),
+      ogretmenKaldirdi: true, ogretmenKaldirmaTarihi: serverTimestamp(),
       ogretmenKaldiranUid: auth.currentUser.uid
     });
     setGonderiler(prev => prev.filter(g => g.id !== gonderiId));
@@ -139,8 +236,7 @@ function TeacherDashboard() {
     }
     for (const uid of secilenOgrenciler) {
       await updateDoc(doc(db, "users", uid), {
-        ogretmenUid: auth.currentUser.uid,
-        ogretmenIsim: ogretmenIsmi
+        ogretmenUid: auth.currentUser.uid, ogretmenIsim: ogretmenIsmi
       });
     }
     setOgrenciler(secilenOgrenciler);
@@ -195,34 +291,47 @@ function TeacherDashboard() {
   const yeniBildirimSayisi = bildirimler.filter(b => !b.ogretmenGordu).length;
 
   return (
+    <div style={{ minHeight: "100vh", background: bg, transition: "background 0.2s" }}>
     <div style={{ maxWidth: "650px", margin: "0 auto", padding: "20px", fontFamily: "sans-serif" }}>
 
       {secilenProfil && (
         <ProfilSayfasi kullaniciId={secilenProfil} onKapat={() => setSecilenProfil(null)} mevcutKullaniciRol="teacher" />
       )}
 
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
           <h2 style={{ color: "#4f46e5", margin: "0 0 4px" }}>Ogretmen Paneli</h2>
-          <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>👤 {ogretmenIsmi} {ogretmenOkul && `• 🏫 ${ogretmenOkul}`}</p>
+          <p style={{ margin: 0, fontSize: "13px", color: ikincilYazi }}>👤 {ogretmenIsmi} {ogretmenOkul && `• 🏫 ${ogretmenOkul}`}</p>
         </div>
-        <button onClick={() => signOut(auth)}
-          style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>
-          Cikis
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {/* Dark mode switch */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "12px", color: ikincilYazi }}>☀️</span>
+            <div onClick={() => { const yeni = !karanlikMod; setKaranlikMod(yeni); localStorage.setItem("teacherKaranlikMod", yeni); }}
+              style={{ width: "36px", height: "20px", borderRadius: "10px", background: karanlikMod ? "#4f46e5" : "#d1d5db", cursor: "pointer", position: "relative", transition: "background 0.2s" }}>
+              <div style={{ width: "16px", height: "16px", borderRadius: "50%", background: "white", position: "absolute", top: "2px", left: karanlikMod ? "18px" : "2px", transition: "left 0.2s" }} />
+            </div>
+            <span style={{ fontSize: "12px", color: ikincilYazi }}>🌙</span>
+          </div>
+          <button onClick={() => signOut(auth)}
+            style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>
+            Cikis
+          </button>
+        </div>
       </div>
 
+      {/* Sinif */}
       <div style={{ marginBottom: "16px" }}>
         <button onClick={() => setSinifAcik(!sinifAcik)}
-          style={{ width: "100%", padding: "12px 16px", background: "white", border: "1px solid #e5e7eb", borderRadius: sinifAcik ? "12px 12px 0 0" : "12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-          <span style={{ fontWeight: "600", color: "#374151", fontSize: "14px" }}>
+          style={{ width: "100%", padding: "12px 16px", background: kartBg, border: `1px solid ${borderRenk}`, borderRadius: sinifAcik ? "12px 12px 0 0" : "12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+          <span style={{ fontWeight: "600", color: yaziRenk, fontSize: "14px" }}>
             👥 Sinifim — {secilenOgrenciler.length} ogrenci
           </span>
-          <span style={{ color: "#6b7280", fontSize: "16px" }}>{sinifAcik ? "▲" : "▼"}</span>
+          <span style={{ color: ikincilYazi, fontSize: "16px" }}>{sinifAcik ? "▲" : "▼"}</span>
         </button>
-
         {sinifAcik && (
-          <div style={{ background: "white", border: "1px solid #e5e7eb", borderTop: "none", borderRadius: "0 0 12px 12px", padding: "16px", boxShadow: "0 4px 8px rgba(0,0,0,0.06)" }}>
+          <div style={{ background: kartBg, border: `1px solid ${borderRenk}`, borderTop: "none", borderRadius: "0 0 12px 12px", padding: "16px", boxShadow: "0 4px 8px rgba(0,0,0,0.06)" }}>
             {!ogretmenOkul && (
               <div style={{ background: "#fef3c7", color: "#92400e", padding: "8px 12px", borderRadius: "8px", fontSize: "12px", marginBottom: "12px" }}>
                 ⚠️ Profilinden okul bilgini ekle — sadece ayni okuldaki ogrenciler listelenecek.
@@ -230,24 +339,19 @@ function TeacherDashboard() {
             )}
             <input type="text" placeholder="🔍 Ogrenci ara..."
               value={sinifArama} onChange={e => setSinifArama(e.target.value)}
-              style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "13px", boxSizing: "border-box", marginBottom: "10px" }} />
+              style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "13px", boxSizing: "border-box", marginBottom: "10px", background: karanlikMod ? "#374151" : "white", color: yaziRenk }} />
             <div style={{ maxHeight: "280px", overflowY: "auto", marginBottom: "12px" }}>
               {filtrelenmisOgrenciler.length === 0 ? (
-                <p style={{ fontSize: "13px", color: "#9ca3af", textAlign: "center", padding: "12px" }}>
+                <p style={{ fontSize: "13px", color: ikincilYazi, textAlign: "center", padding: "12px" }}>
                   {ogretmenOkul ? "Ayni okuldaki ogrenci bulunamadi." : "Ogrenci bulunamadi."}
                 </p>
               ) : (
                 filtrelenmisOgrenciler.map(o => (
                   <div key={o.id} onClick={() => ogrenciToggle(o.id)}
-                    style={{
-                      padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer",
-                      background: secilenOgrenciler.includes(o.id) ? "#e0e7ff" : "#f9fafb",
-                      border: secilenOgrenciler.includes(o.id) ? "1px solid #4f46e5" : "1px solid #e5e7eb",
-                      display: "flex", justifyContent: "space-between", alignItems: "center"
-                    }}>
+                    style={{ padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer", background: secilenOgrenciler.includes(o.id) ? "#e0e7ff" : (karanlikMod ? "#374151" : "#f9fafb"), border: secilenOgrenciler.includes(o.id) ? "1px solid #4f46e5" : `1px solid ${borderRenk}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
-                      <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenOgrenciler.includes(o.id) ? "#4f46e5" : "#374151" }}>{o.isim}</p>
-                      {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>📚 {o.sinif}</p>}
+                      <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenOgrenciler.includes(o.id) ? "#4f46e5" : yaziRenk }}>{o.isim}</p>
+                      {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>📚 {o.sinif}</p>}
                       {o.ogretmenIsim && o.ogretmenUid !== auth.currentUser.uid && (
                         <p style={{ margin: 0, fontSize: "11px", color: "#f59e0b" }}>⚠️ Baska ogretmende: {o.ogretmenIsim}</p>
                       )}
@@ -271,13 +375,14 @@ function TeacherDashboard() {
         )}
       </div>
 
+      {/* Sekmeler */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
         <button onClick={() => setAktifSekme("paylasimlar")}
-          style={{ flex: 1, padding: "10px", background: aktifSekme === "paylasimlar" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "paylasimlar" ? "white" : "#374151", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
+          style={{ flex: 1, padding: "10px", background: aktifSekme === "paylasimlar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "paylasimlar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
           📢 Paylasimlarim
         </button>
         <button onClick={() => setAktifSekme("bildirimler")}
-          style={{ flex: 1, padding: "10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "bildirimler" ? "white" : "#374151", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
+          style={{ flex: 1, padding: "10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "bildirimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
           🚩 Bildirimler
           {yeniBildirimSayisi > 0 && (
             <span style={{ position: "absolute", top: "-6px", right: "-6px", background: acilBildirimSayisi > 0 ? "#ef4444" : "#f59e0b", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
@@ -287,41 +392,81 @@ function TeacherDashboard() {
         </button>
       </div>
 
-      {yukleniyor ? <p>Yukleniyor...</p> : aktifSekme === "paylasimlar" ? (
+      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "paylasimlar" ? (
         <div>
-          <div style={{ background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
-            <p style={{ fontSize: "13px", color: "#6b7280", margin: "0 0 8px" }}>
+          {/* Gonderi kutusu */}
+          <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
+            <p style={{ fontSize: "13px", color: ikincilYazi, margin: "0 0 8px" }}>
               📋 Sinifina duyuru veya bilgi paylas ({ogrenciler.length} ogrenci gorecek)
             </p>
             <textarea placeholder="Odev, duyuru, hatirlatma yazin..." value={yeniGonderi} onChange={e => setYeniGonderi(e.target.value)}
-              style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "14px", resize: "vertical", minHeight: "80px", boxSizing: "border-box", fontFamily: "inherit" }} />
+              style={{ width: "100%", padding: "12px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "14px", resize: "vertical", minHeight: "80px", boxSizing: "border-box", fontFamily: "inherit", background: karanlikMod ? "#374151" : "white", color: yaziRenk }} />
             {hataMesaj && <div style={{ marginTop: "8px", padding: "8px 12px", background: "#fee2e2", color: "#ef4444", borderRadius: "8px", fontSize: "13px" }}>{hataMesaj}</div>}
-            <button onClick={gonderiYap} disabled={gonderiYukleniyor}
-              style={{ marginTop: "10px", padding: "10px 24px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "600" }}>
-              {gonderiYukleniyor ? "Paylasiliyor..." : "📢 Paylas"}
-            </button>
+
+            {/* Medya onizleme */}
+            {secilenMedya && (
+              <div style={{ marginTop: "10px", position: "relative", display: "inline-block" }}>
+                {medyaTip === "video" ? (
+                  <video src={medyaOnizleme || ""} controls style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "8px", border: "1px solid #ddd" }} />
+                ) : medyaTip === "foto" ? (
+                  <img src={medyaOnizleme} alt="onizleme" style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "8px", border: "1px solid #ddd" }} />
+                ) : (
+                  <div style={{ padding: "10px 16px", background: "#e0e7ff", color: "#4f46e5", borderRadius: "8px", fontSize: "13px", fontWeight: "600" }}>
+                    📄 {secilenMedya.name}
+                  </div>
+                )}
+                <button onClick={medyaTemizle}
+                  style={{ position: "absolute", top: "4px", right: "4px", background: "#ef4444", color: "white", border: "none", borderRadius: "50%", width: "24px", height: "24px", cursor: "pointer", fontSize: "12px", fontWeight: "700" }}>
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "8px", marginTop: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ padding: "8px 14px", background: karanlikMod ? "#374151" : "#f3f4f6", color: yaziRenk, border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}>
+                🖼️ Foto
+                <input type="file" accept="image/*" onChange={medyaSec} style={{ display: "none" }} />
+              </label>
+              <label style={{ padding: "8px 14px", background: karanlikMod ? "#374151" : "#f3f4f6", color: yaziRenk, border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}>
+                🎬 Video
+                <input type="file" accept="video/*" onChange={medyaSec} style={{ display: "none" }} />
+              </label>
+              <label style={{ padding: "8px 14px", background: karanlikMod ? "#374151" : "#f3f4f6", color: yaziRenk, border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}>
+                📄 Belge
+                <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" onChange={medyaSec} style={{ display: "none" }} />
+              </label>
+              <button onClick={gonderiYap} disabled={gonderiYukleniyor || medyaYukleniyor}
+                style={{ padding: "8px 20px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "600" }}>
+                {medyaYukleniyor ? "Yukleniyor..." : gonderiYukleniyor ? "Paylasiliyor..." : "📢 Paylas"}
+              </button>
+            </div>
           </div>
 
           {gonderiler.length === 0 ? (
-            <div style={{ background: "white", padding: "20px", borderRadius: "12px", textAlign: "center", color: "#888" }}>
+            <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}>
               <p>Henuz paylasim yapmadınız.</p>
             </div>
           ) : (
             <>
-              <h3 style={{ color: "#666", marginBottom: "12px", fontSize: "14px" }}>Paylasimlarim ({gonderiler.length})</h3>
+              <h3 style={{ color: ikincilYazi, marginBottom: "12px", fontSize: "14px" }}>Paylasimlarim ({gonderiler.length})</h3>
               {gonderiler.map(g => {
                 const begenenler = g.begenenler || [];
                 return (
-                  <div key={g.id} style={{ background: "white", padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px" }}>
-                    <p style={{ margin: "0 0 10px", fontSize: "15px", color: "#111827" }}>{g.icerik}</p>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <small style={{ color: "#6b7280", fontSize: "12px" }}>
-                        {g.tarih ? new Date(g.tarih.seconds * 1000).toLocaleDateString("tr-TR") : ""}
+                  <div key={g.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px" }}>
+                    <p style={{ margin: "0 0 6px", fontSize: "15px", color: yaziRenk }}>
+                      {g.icerik.split(/(\bhttps?:\/\/\S+)/g).map((parca, i) =>
+                        parca.match(/^https?:\/\//) ? (
+                          <a key={i} href={parca} target="_blank" rel="noopener noreferrer" style={{ color: "#4f46e5", textDecoration: "underline" }}>{parca}</a>
+                        ) : parca
+                      )}
+                    </p>
+                    {g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
+                      <small style={{ color: ikincilYazi, fontSize: "12px" }}>
+                        {g.tarih ? new Date(g.tarih.seconds * 1000).toLocaleDateString("tr-TR") + " " + new Date(g.tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) : ""}
                       </small>
                       <div style={{ display: "flex", gap: "6px" }}>
-                        <span style={{ padding: "4px 10px", background: "#fee2e2", color: "#ef4444", borderRadius: "6px", fontSize: "12px" }}>
-                          ❤️ {begenenler.length}
-                        </span>
+                        <span style={{ padding: "4px 10px", background: "#fee2e2", color: "#ef4444", borderRadius: "6px", fontSize: "12px" }}>❤️ {begenenler.length}</span>
                         <button onClick={() => gonderiSil(g.id)}
                           style={{ padding: "4px 10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
                           🗑️ Sil
@@ -337,17 +482,12 @@ function TeacherDashboard() {
       ) : (
         <div>
           {bildirimler.length === 0 ? (
-            <div style={{ background: "white", padding: "20px", borderRadius: "12px", textAlign: "center", color: "#888" }}>
+            <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}>
               <p>Hic bildirim yok.</p>
             </div>
           ) : (
             bildirimler.map(b => (
-              <div key={b.id} style={{
-                background: "white", padding: "16px", borderRadius: "12px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px",
-                border: b.acil && !b.ogretmenGordu ? "2px solid #ef4444" : "1px solid #e5e7eb",
-                opacity: b.ogretmenSildi ? 0.7 : 1
-              }}>
+              <div key={b.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", border: b.acil && !b.ogretmenGordu ? "2px solid #ef4444" : `1px solid ${borderRenk}`, opacity: b.ogretmenSildi ? 0.7 : 1 }}>
                 {b.acil && !b.ogretmenGordu && (
                   <div style={{ background: "#fee2e2", color: "#991b1b", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", marginBottom: "8px", fontWeight: "700" }}>
                     🚨 ACIL: Ogrenci yardim istiyor!
@@ -359,15 +499,11 @@ function TeacherDashboard() {
                   {b.adminaIletti && <span style={{ background: "#d1fae5", color: "#065f46", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>✓ Admine iletildi {b.iletenRol === "parent" ? "(veli)" : "(ogretmen)"}</span>}
                   {b.veliSildi && <span style={{ background: "#ede9fe", color: "#5b21b6", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>Veli kaldirdi</span>}
                 </div>
-                <p style={{ margin: "0 0 6px", fontSize: "13px", color: "#6b7280" }}>
-                  📋 Sebep: <strong>{b.kategori}</strong>{b.digerSebep && <span> — "{b.digerSebep}"</span>}
-                </p>
-                <p style={{ margin: "0 0 8px", fontSize: "13px", color: "#6b7280" }}>
-                  💙 Bildiren cocugun durumu: {b.iyiMisin === "iyi" ? "😊 Iyi" : b.iyiMisin === "uzgun" ? "😟 Biraz uzgun" : b.iyiMisin === "yardim" ? "😢 Yardim istiyor" : "—"}
-                </p>
-                <div style={{ background: "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "8px" }}>
-                  <p style={{ margin: "0 0 4px", fontSize: "14px" }}>{b.icerikMetni}</p>
-                  <small style={{ color: "#6b7280" }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.yazar}</span></small>
+                <p style={{ margin: "0 0 6px", fontSize: "13px", color: ikincilYazi }}>📋 Sebep: <strong>{b.kategori}</strong>{b.digerSebep && <span> — "{b.digerSebep}"</span>}</p>
+                <p style={{ margin: "0 0 8px", fontSize: "13px", color: ikincilYazi }}>💙 Bildiren cocugun durumu: {b.iyiMisin === "iyi" ? "😊 Iyi" : b.iyiMisin === "uzgun" ? "😟 Biraz uzgun" : b.iyiMisin === "yardim" ? "😢 Yardim istiyor" : "—"}</p>
+                <div style={{ background: karanlikMod ? "#374151" : "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "8px" }}>
+                  <p style={{ margin: "0 0 4px", fontSize: "14px", color: yaziRenk }}>{b.icerikMetni}</p>
+                  <small style={{ color: ikincilYazi }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.yazar}</span></small>
                 </div>
                 {b.tip === "post" && (
                   <button onClick={() => postIcerikGoster(b.id, b.postId)}
@@ -376,19 +512,17 @@ function TeacherDashboard() {
                   </button>
                 )}
                 {acikIcerik[b.id] && postDetay[b.postId] && (
-                  <div style={{ background: "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
-                    <p style={{ margin: 0 }}>{postDetay[b.postId].icerik}</p>
+                  <div style={{ background: karanlikMod ? "#4b5563" : "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
+                    <p style={{ margin: 0, color: yaziRenk }}>{postDetay[b.postId].icerik}</p>
                     <MedyaGoster url={postDetay[b.postId].fotoUrl} />
                     {postDetay[b.postId].tarih && (
-                      <small style={{ color: "#6b7280", fontSize: "11px" }}>
+                      <small style={{ color: ikincilYazi, fontSize: "11px" }}>
                         📅 Paylasim tarihi: {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
                       </small>
                     )}
                   </div>
                 )}
-                <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 8px" }}>
-                  🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.bildiren}</span>
-                </p>
+                <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.bildiren}</span></p>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   {!b.ogretmenGordu && (
                     <button onClick={() => bildirimOkundu(b.id)}
@@ -414,6 +548,7 @@ function TeacherDashboard() {
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }
