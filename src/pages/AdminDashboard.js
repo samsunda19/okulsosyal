@@ -38,6 +38,8 @@ function AdminDashboard() {
   const [secilenOgrenciler, setSecilenOgrenciler] = useState([]);
   const [secilenCocuk, setSecilenCocuk] = useState("");
   const [kaydetYukleniyor, setKaydetYukleniyor] = useState(false);
+  const [sinifAramaMetni, setSinifAramaMetni] = useState("");
+  const [cocukAramaMetni, setCocukAramaMetni] = useState("");
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("adminKaranlikMod") === "true");
   const [postDetay, setPostDetay] = useState({});
   const [acikBildirimPost, setAcikBildirimPost] = useState({});
@@ -49,9 +51,7 @@ function AdminDashboard() {
   const inputBg = karanlikMod ? "#374151" : "white";
   const borderRenk = karanlikMod ? "#374151" : "#e5e7eb";
 
-  useEffect(() => {
-    verileriGetir();
-  }, []);
+  useEffect(() => { verileriGetir(); }, []);
 
   const verileriGetir = async () => {
     const postSnapshot = await getDocs(collection(db, "posts"));
@@ -65,9 +65,7 @@ function AdminDashboard() {
     userSnapshot.docs.forEach(d => {
       const data = { id: d.id, ...d.data() };
       tumKullaniciler[d.id] = data;
-      if (data.role === "student" && data.onaylandi === false && !data.reddedildi) {
-        bekleyenListesi.push(data);
-      }
+      if (data.role === "student" && data.onaylandi === false && !data.reddedildi) bekleyenListesi.push(data);
     });
     setKullaniciler(tumKullaniciler);
     setBekleyenler(bekleyenListesi);
@@ -127,9 +125,7 @@ function AdminDashboard() {
     setAcikBildirimPost(prev => ({ ...prev, [reportId]: !zatenAcik }));
     if (!zatenAcik && !postDetay[postId]) {
       const postDoc = await getDoc(doc(db, "posts", postId));
-      if (postDoc.exists()) {
-        setPostDetay(prev => ({ ...prev, [postId]: { id: postDoc.id, ...postDoc.data() } }));
-      }
+      if (postDoc.exists()) setPostDetay(prev => ({ ...prev, [postId]: { id: postDoc.id, ...postDoc.data() } }));
     }
   };
 
@@ -169,6 +165,8 @@ function AdminDashboard() {
     setSecilenOgrenciler(k.role === "teacher" ? (k.sinif || []) : []);
     setSecilenCocuk(k.role === "parent" ? ((k.cocuklar || [])[0] || "") : "");
     setAramaMetni("");
+    setSinifAramaMetni("");
+    setCocukAramaMetni("");
   };
 
   const rolDegistir = async (yeniRol) => {
@@ -193,15 +191,10 @@ function AdminDashboard() {
     await updateDoc(doc(db, "users", secilenKullanici.id), { sinif: secilenOgrenciler });
     const eskiSinif = secilenKullanici.sinif || [];
     for (const uid of eskiSinif) {
-      if (!secilenOgrenciler.includes(uid)) {
-        await updateDoc(doc(db, "users", uid), { ogretmenUid: null, ogretmenIsim: null });
-      }
+      if (!secilenOgrenciler.includes(uid)) await updateDoc(doc(db, "users", uid), { ogretmenUid: null, ogretmenIsim: null });
     }
     for (const uid of secilenOgrenciler) {
-      await updateDoc(doc(db, "users", uid), {
-        ogretmenUid: secilenKullanici.id,
-        ogretmenIsim: secilenKullanici.isim
-      });
+      await updateDoc(doc(db, "users", uid), { ogretmenUid: secilenKullanici.id, ogretmenIsim: secilenKullanici.isim });
     }
     const guncellenmis = { ...secilenKullanici, sinif: secilenOgrenciler };
     setSecilenKullanici(guncellenmis);
@@ -247,6 +240,13 @@ function AdminDashboard() {
     : gonderiler;
 
   const onayliOgrenciler = Object.values(kullaniciler).filter(k => k.role === "student" && k.onaylandi === true);
+  const filtrelenmisOgrenciler = sinifAramaMetni.trim()
+    ? onayliOgrenciler.filter(o => (o.isim || "").toLowerCase().includes(sinifAramaMetni.toLowerCase()))
+    : onayliOgrenciler;
+  const filtrelenmisCocuklar = cocukAramaMetni.trim()
+    ? onayliOgrenciler.filter(o => (o.isim || "").toLowerCase().includes(cocukAramaMetni.toLowerCase()))
+    : onayliOgrenciler;
+
   const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.okundu).length;
   const yeniBildirimSayisi = bildirimler.filter(b => !b.okundu).length;
 
@@ -263,10 +263,7 @@ function AdminDashboard() {
           <div style={{ background: kartBg, color: yaziRenk, borderRadius: "16px", padding: "24px", width: "90%", maxWidth: "500px", maxHeight: "85vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
               <h3 style={{ margin: 0, fontSize: "16px", color: yaziRenk }}>👤 {secilenKullanici.isim}</h3>
-              <button onClick={() => setYonetimAcik(false)}
-                style={{ background: "#e5e7eb", border: "none", borderRadius: "8px", padding: "6px 12px", cursor: "pointer" }}>
-                Kapat
-              </button>
+              <button onClick={() => setYonetimAcik(false)} style={{ background: "#e5e7eb", border: "none", borderRadius: "8px", padding: "6px 12px", cursor: "pointer" }}>Kapat</button>
             </div>
             <p style={{ fontSize: "13px", color: ikincilYazi, margin: "0 0 4px" }}>📧 {secilenKullanici.email}</p>
             {secilenKullanici.okul && <p style={{ fontSize: "13px", color: ikincilYazi, margin: "0 0 16px" }}>🏫 {secilenKullanici.okul}</p>}
@@ -281,15 +278,8 @@ function AdminDashboard() {
               <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>Rol degistir:</p>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 {["student", "teacher", "parent", "admin"].map(rol => (
-                  <button key={rol} onClick={() => rolDegistir(rol)}
-                    disabled={secilenKullanici.role === rol}
-                    style={{
-                      padding: "6px 12px", border: "none", borderRadius: "6px",
-                      cursor: secilenKullanici.role === rol ? "default" : "pointer",
-                      background: secilenKullanici.role === rol ? rolRenk(rol).bg : "#e5e7eb",
-                      color: secilenKullanici.role === rol ? rolRenk(rol).text : "#374151",
-                      fontSize: "12px", fontWeight: "600"
-                    }}>
+                  <button key={rol} onClick={() => rolDegistir(rol)} disabled={secilenKullanici.role === rol}
+                    style={{ padding: "6px 12px", border: "none", borderRadius: "6px", cursor: secilenKullanici.role === rol ? "default" : "pointer", background: secilenKullanici.role === rol ? rolRenk(rol).bg : "#e5e7eb", color: secilenKullanici.role === rol ? rolRenk(rol).text : "#374151", fontSize: "12px", fontWeight: "600" }}>
                     {rol === "student" ? "Ogrenci" : rol === "teacher" ? "Ogretmen" : rol === "parent" ? "Veli" : "Admin"}
                     {secilenKullanici.role === rol && " ✓"}
                   </button>
@@ -306,19 +296,17 @@ function AdminDashboard() {
                   <p style={{ fontSize: "12px", color: ikincilYazi }}>Onaylanmis ogrenci yok.</p>
                 ) : (
                   <>
+                    <input type="text" placeholder="🔍 Ogrenci ara..." value={sinifAramaMetni}
+                      onChange={e => setSinifAramaMetni(e.target.value)}
+                      style={{ width: "100%", padding: "8px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "13px", boxSizing: "border-box", marginBottom: "8px", background: inputBg, color: yaziRenk }} />
                     <div style={{ maxHeight: "220px", overflowY: "auto", marginBottom: "10px" }}>
-                      {onayliOgrenciler.map(o => (
+                      {filtrelenmisOgrenciler.map(o => (
                         <div key={o.id} onClick={() => ogrenciToggle(o.id)}
-                          style={{
-                            padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer",
-                            background: secilenOgrenciler.includes(o.id) ? "#e0e7ff" : "white",
-                            border: secilenOgrenciler.includes(o.id) ? "1px solid #4f46e5" : "1px solid #e5e7eb",
-                            display: "flex", justifyContent: "space-between", alignItems: "center"
-                          }}>
+                          style={{ padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer", background: secilenOgrenciler.includes(o.id) ? "#e0e7ff" : (karanlikMod ? "#1f2937" : "white"), border: secilenOgrenciler.includes(o.id) ? "1px solid #4f46e5" : "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <div>
-                            <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenOgrenciler.includes(o.id) ? "#4f46e5" : "#374151" }}>{o.isim}</p>
-                            {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>📚 {o.sinif}</p>}
-                            {o.okul && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>🏫 {o.okul}</p>}
+                            <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenOgrenciler.includes(o.id) ? "#4f46e5" : yaziRenk }}>{o.isim}</p>
+                            {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>📚 {o.sinif}</p>}
+                            {o.okul && <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>🏫 {o.okul}</p>}
                           </div>
                           {secilenOgrenciler.includes(o.id) && <span style={{ color: "#4f46e5", fontWeight: "700" }}>✓</span>}
                         </div>
@@ -340,19 +328,17 @@ function AdminDashboard() {
                   <p style={{ fontSize: "12px", color: ikincilYazi }}>Onaylanmis ogrenci yok.</p>
                 ) : (
                   <>
+                    <input type="text" placeholder="🔍 Ogrenci ara..." value={cocukAramaMetni}
+                      onChange={e => setCocukAramaMetni(e.target.value)}
+                      style={{ width: "100%", padding: "8px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "13px", boxSizing: "border-box", marginBottom: "8px", background: inputBg, color: yaziRenk }} />
                     <div style={{ maxHeight: "220px", overflowY: "auto", marginBottom: "10px" }}>
-                      {onayliOgrenciler.map(o => (
+                      {filtrelenmisCocuklar.map(o => (
                         <div key={o.id} onClick={() => setSecilenCocuk(o.id)}
-                          style={{
-                            padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer",
-                            background: secilenCocuk === o.id ? "#d1fae5" : "white",
-                            border: secilenCocuk === o.id ? "1px solid #10b981" : "1px solid #e5e7eb",
-                            display: "flex", justifyContent: "space-between", alignItems: "center"
-                          }}>
+                          style={{ padding: "8px 10px", borderRadius: "8px", marginBottom: "4px", cursor: "pointer", background: secilenCocuk === o.id ? "#d1fae5" : (karanlikMod ? "#1f2937" : "white"), border: secilenCocuk === o.id ? "1px solid #10b981" : "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <div>
-                            <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenCocuk === o.id ? "#065f46" : "#374151" }}>{o.isim}</p>
-                            {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>📚 {o.sinif}</p>}
-                            {o.okul && <p style={{ margin: 0, fontSize: "11px", color: "#6b7280" }}>🏫 {o.okul}</p>}
+                            <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secilenCocuk === o.id ? "#065f46" : yaziRenk }}>{o.isim}</p>
+                            {o.sinif && <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>📚 {o.sinif}</p>}
+                            {o.okul && <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>🏫 {o.okul}</p>}
                           </div>
                           {secilenCocuk === o.id && <span style={{ color: "#10b981", fontWeight: "700" }}>✓</span>}
                         </div>
@@ -375,7 +361,6 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <h2 style={{ color: "#4f46e5", margin: 0 }}>Admin Paneli</h2>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -387,14 +372,10 @@ function AdminDashboard() {
             </div>
             <span style={{ fontSize: "12px", color: ikincilYazi }}>🌙</span>
           </div>
-          <button onClick={() => signOut(auth)}
-            style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>
-            Cikis
-          </button>
+          <button onClick={() => signOut(auth)} style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>Cikis</button>
         </div>
       </div>
 
-      {/* Kullanici arama */}
       <div style={{ background: kartBg, padding: "12px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
         <input type="text" placeholder="🔍 Kullanici ara - tikla, rol/sinif ata..."
           value={aramaMetni} onChange={e => setAramaMetni(e.target.value)}
@@ -410,9 +391,7 @@ function AdminDashboard() {
                   <p style={{ margin: "0", fontSize: "11px", color: ikincilYazi }}>{k.email}</p>
                 </div>
                 <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                  <span style={{ padding: "2px 6px", background: rolRenk(k.role).bg, color: rolRenk(k.role).text, borderRadius: "4px", fontSize: "10px", fontWeight: "600" }}>
-                    {k.role}
-                  </span>
+                  <span style={{ padding: "2px 6px", background: rolRenk(k.role).bg, color: rolRenk(k.role).text, borderRadius: "4px", fontSize: "10px", fontWeight: "600" }}>{k.role}</span>
                   {k.dondurulmus && <span style={{ padding: "2px 6px", background: "#fee2e2", color: "#ef4444", borderRadius: "4px", fontSize: "10px" }}>🔒</span>}
                   <span style={{ fontSize: "11px", color: ikincilYazi }}>→</span>
                 </div>
@@ -422,7 +401,6 @@ function AdminDashboard() {
         )}
       </div>
 
-      {/* Sekmeler */}
       <div style={{ display: "flex", gap: "6px", marginBottom: "20px", flexWrap: "wrap" }}>
         {[["etkilesimler", "💬 Paylasimlar"], ["bildirimler", "🚩 Bildirimler"], ["bekleyenler", "⏳ Onaylar"]].map(([key, label]) => (
           <button key={key} onClick={() => setAktifSekme(key)}
@@ -490,7 +468,6 @@ function AdminDashboard() {
                     {b.fotoUrl && <MedyaGoster url={b.fotoUrl} />}
                     <small style={{ color: ikincilYazi }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.yazar}</span></small>
                   </div>
-                  {/* Paylasim detayi - tarih icin */}
                   {b.postId && (
                     <button onClick={() => bildirimPostGoster(b.id, b.postId)}
                       style={{ fontSize: "12px", color: "#4f46e5", background: "none", border: "none", cursor: "pointer", padding: "0", marginBottom: "8px" }}>
@@ -500,9 +477,7 @@ function AdminDashboard() {
                   {acikBildirimPost[b.id] && postDetay[b.postId] && (
                     <div style={{ background: karanlikMod ? "#4b5563" : "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
                       {postDetay[b.postId].tarih && (
-                        <p style={{ margin: "0", color: ikincilYazi }}>
-                          📅 Paylasim tarihi: <strong>{tarihFormat(postDetay[b.postId].tarih.seconds)}</strong>
-                        </p>
+                        <p style={{ margin: "0", color: ikincilYazi }}>📅 Paylasim tarihi: <strong>{tarihFormat(postDetay[b.postId].tarih.seconds)}</strong></p>
                       )}
                     </div>
                   )}
