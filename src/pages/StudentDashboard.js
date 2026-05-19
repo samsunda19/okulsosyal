@@ -75,6 +75,31 @@ const MedyaGoster = React.memo(({ url }) => {
       </div>
     );
   }
+  const belgeUzantilari = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt"];
+  const belge = belgeUzantilari.some(u => url.toLowerCase().includes(u)) || url.includes("/belgeler/");
+  if (belge) {
+    const dosyaExt = url.split(".").pop().split("?")[0].toUpperCase();
+    const dosyaAdi = dosyaExt;
+    const indir = async () => {
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = dosyaAdi;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        window.open(url, "_blank");
+      }
+    };
+    return (
+      <div onClick={indir} style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginBottom: "8px", padding: "8px 12px", background: "#e0e7ff", color: "#4f46e5", borderRadius: "8px", fontSize: "13px", fontWeight: "600", cursor: "pointer" }}>
+        📄 {dosyaAdi} ⬇️
+      </div>
+    );
+  }
   return (
     <img
       src={url}
@@ -112,7 +137,7 @@ const GonderiKarti = React.memo(({
   return (
     <div style={{ background: kartArkaplan, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", opacity: kaldirildi ? 0.75 : 1 }}>
       {ogretmenPostu && (
-        <div style={{ fontSize: "11px", color: "#4f46e5", background: "#e0e7ff", padding: "2px 8px", borderRadius: "6px", display: "inline-block", marginBottom: "6px" }}>
+        <div style={{ fontSize: "11px", color: "#4f46e5", background: "#e0e7ff", padding: "2px 8px", borderRadius: "6px", display: "block", marginBottom: "6px", width: "fit-content" }}>
           📋 Ogretmen Paylasimi
         </div>
       )}
