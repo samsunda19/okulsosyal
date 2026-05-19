@@ -40,9 +40,12 @@ function ParentDashboard() {
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("parentKaranlikMod") === "true");
 
   const bg = karanlikMod ? "#111827" : "#f9fafb";
+  // eslint-disable-next-line no-unused-vars
   const kartBg = karanlikMod ? "#1f2937" : "white";
+  // eslint-disable-next-line no-unused-vars
   const yaziRenk = karanlikMod ? "#f3f4f6" : "#111827";
   const ikincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
+  // eslint-disable-next-line no-unused-vars
   const borderRenk = karanlikMod ? "#374151" : "#e5e7eb";
 
   useEffect(() => {
