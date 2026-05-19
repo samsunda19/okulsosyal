@@ -222,6 +222,7 @@ const GonderiKarti = React.memo(({
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
   const [gonderiler, setGonderiler] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [sonDoc, setSonDoc] = useState(null);
   const [dahaFazla, setDahaFazla] = useState(false);
   const [dahaFazlaYukleniyor, setDahaFazlaYukleniyor] = useState(false);
