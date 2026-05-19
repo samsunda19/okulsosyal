@@ -292,7 +292,6 @@ function StudentDashboard() {
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(g => g.yazarUid === ogretmenUid && !g.adminSildi);
     setOgretmenGonderiler(liste);
-    const gorulmusKey = "ogretmenPostGorulmus_" + auth.currentUser.uid;
     const gorulmusKey2 = "ogretmenGorulmusIds_" + auth.currentUser.uid;
     const gorulmusIds = JSON.parse(localStorage.getItem(gorulmusKey2) || "[]");
     const yeni = liste.filter(g => !gorulmusIds.includes(g.id));
@@ -301,12 +300,11 @@ function StudentDashboard() {
 
   const ogretmenSekmeAc = () => {
     setAktifSekme("ogretmen");
-    const gorulmusKey = "ogretmenPostGorulmus_" + auth.currentUser.uid;
-    const gorulmusKey2 = "ogretmenGorulmusIds_" + auth.currentUser.uid;
-    const mevcutIds = JSON.parse(localStorage.getItem(gorulmusKey2) || "[]");
+    const anahtar = "ogretmenGorulmusIds_" + auth.currentUser.uid;
+    const mevcutIds = JSON.parse(localStorage.getItem(anahtar) || "[]");
     const tumIds = ogretmenGonderiler.map(g => g.id);
     const yeniIds = [...new Set([...mevcutIds, ...tumIds])];
-    localStorage.setItem(gorulmusKey2, JSON.stringify(yeniIds));
+    localStorage.setItem(anahtar, JSON.stringify(yeniIds));
     setGorulmemisOgretmenPost(0);
   };
 
