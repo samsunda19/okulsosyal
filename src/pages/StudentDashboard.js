@@ -127,6 +127,7 @@ const GonderiKarti = React.memo(({
   onProfilAc, onBegeni, onYorumToggle, onYorumYap, onYorumMetinDegis, onYorumSil,
   onGonderiSil, onBildirimBaslat
 }) => {
+  const [begeniAnimasyon, setBegeniAnimasyon] = useState(false);
   const begenenler = g.begenenler || [];
   const benBegendimMi = begenenler.includes(mevcutKullaniciUid);
   const benimPaylasimim = g.yazarUid === mevcutKullaniciUid;
@@ -134,8 +135,46 @@ const GonderiKarti = React.memo(({
   const ogretmenPostu = listeAdi === "ogretmen";
   const kaldirildi = g.ogrenciSildi || g.veliKaldirdi || g.ogretmenKaldirdi || g.adminSildi;
 
+  const handleBegeni = () => {
+    if (!benBegendimMi) {
+      setBegeniAnimasyon(true);
+      setTimeout(() => setBegeniAnimasyon(false), 600);
+    }
+    onBegeni(g.id, begenenler, listeAdi);
+  };
+
   return (
-    <div style={{ background: kartArkaplan, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", opacity: kaldirildi ? 0.75 : 1 }}>
+    <div style={{
+      background: kartArkaplan,
+      padding: "16px",
+      borderRadius: "16px",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+      marginBottom: "12px",
+      opacity: kaldirildi ? 0.75 : 1,
+      border: karanlikMod ? "1px solid #374151" : "1px solid rgba(79,70,229,0.08)",
+      transition: "transform 0.15s ease, box-shadow 0.15s ease",
+    }}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)"; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)"; }}
+    >
+      <style>{`
+        @keyframes kalp-patlat {
+          0% { transform: scale(1); }
+          30% { transform: scale(1.5); }
+          60% { transform: scale(0.9); }
+          100% { transform: scale(1); }
+        }
+        @keyframes zipla {
+          0%, 100% { transform: translateY(0); }
+          40% { transform: translateY(-4px); }
+          70% { transform: translateY(-2px); }
+        }
+        @keyframes parca-yuksel {
+          0% { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(-40px) scale(0.5); }
+        }
+      `}</style>
+
       {ogretmenPostu && (
         <div style={{ fontSize: "11px", color: "#4f46e5", background: "#e0e7ff", padding: "2px 8px", borderRadius: "6px", display: "block", marginBottom: "6px", width: "fit-content" }}>
           📋 Ogretmen Paylasimi
@@ -180,10 +219,17 @@ const GonderiKarti = React.memo(({
             </small>
           )}
         </div>
-        <div style={{ display: "flex", gap: "6px" }}>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
           {!kaldirildi && (
-            <button onClick={() => onBegeni(g.id, begenenler, listeAdi)}
-              style={{ padding: "4px 10px", background: benBegendimMi ? "#fee2e2" : (karanlikMod ? "#374151" : "#f3f4f6"), color: benBegendimMi ? "#ef4444" : kartIkincilYazi, border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
+            <button onClick={handleBegeni}
+              style={{
+                padding: "4px 10px",
+                background: benBegendimMi ? "#fee2e2" : (karanlikMod ? "#374151" : "#f3f4f6"),
+                color: benBegendimMi ? "#ef4444" : kartIkincilYazi,
+                border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px",
+                animation: begeniAnimasyon ? "kalp-patlat 0.6s ease" : "none",
+                position: "relative"
+              }}>
               {benBegendimMi ? "❤️" : "🤍"} {begenenler.length}
             </button>
           )}
@@ -283,6 +329,7 @@ function StudentDashboard() {
   const [medyaOnizleme, setMedyaOnizleme] = useState(null);
   const [medyaTip, setMedyaTip] = useState(null);
   const [medyaYukleniyor, setMedyaYukleniyor] = useState(false);
+  const [aktifSekmeHover, setAktifSekmeHover] = useState(null);
   const arkadaslarRef = useRef([]);
   const sonDocRef = useRef(null);
   const dahaFazlaRef = useRef(false);
@@ -295,15 +342,12 @@ function StudentDashboard() {
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Infinite scroll
   useEffect(() => {
     const handleScroll = () => {
       if (yukleniyor2Ref.current || !dahaFazlaRef.current) return;
       const scrolled = window.scrollY + window.innerHeight;
       const total = document.documentElement.scrollHeight;
-      if (scrolled >= total - 300) {
-        dahaFazlaGetir();
-      }
+      if (scrolled >= total - 300) dahaFazlaGetir();
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
@@ -342,9 +386,7 @@ function StudentDashboard() {
   const ilkGonderileriGetir = async () => {
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"), limit(GONDERI_LIMIT));
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
     setGonderiler(liste);
     const sonSayfaDoc = snapshot.docs[snapshot.docs.length - 1] || null;
     sonDocRef.current = sonSayfaDoc;
@@ -360,9 +402,7 @@ function StudentDashboard() {
     setDahaFazlaYukleniyor(true);
     const q = query(collection(db, "posts"), orderBy("tarih", "desc"), startAfter(sonDocRef.current), limit(GONDERI_LIMIT));
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
     setGonderiler(prev => [...prev, ...liste]);
     const sonSayfaDoc = snapshot.docs[snapshot.docs.length - 1] || null;
     sonDocRef.current = sonSayfaDoc;
@@ -374,16 +414,12 @@ function StudentDashboard() {
     setDahaFazlaYukleniyor(false);
   };
 
-  const gonderileriGetir = async () => {
-    await ilkGonderileriGetir();
-  };
+  const gonderileriGetir = async () => { await ilkGonderileriGetir(); };
 
   const ogretmenGonderileriniGetir = async (ogretmenUid) => {
     const q = query(collection(db, "duyurular"), orderBy("tarih", "desc"));
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g => g.yazarUid === ogretmenUid && !g.adminSildi);
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => g.yazarUid === ogretmenUid && !g.adminSildi);
     setOgretmenGonderiler(liste);
     const gorulmusKey2 = "ogretmenGorulmusIds_" + auth.currentUser.uid;
     const gorulmusIds = JSON.parse(localStorage.getItem(gorulmusKey2) || "[]");
@@ -416,9 +452,7 @@ function StudentDashboard() {
 
   const bildirimleriGetir = async () => {
     const snapshot = await getDocs(collection(db, "reports"));
-    const benimBildirimlerim = snapshot.docs
-      .filter(d => d.data().bildirenUid === auth.currentUser.uid)
-      .map(d => d.data().postId);
+    const benimBildirimlerim = snapshot.docs.filter(d => d.data().bildirenUid === auth.currentUser.uid).map(d => d.data().postId);
     setBildirdigim(benimBildirimlerim);
   };
 
@@ -483,11 +517,7 @@ function StudentDashboard() {
     e.target.value = "";
   };
 
-  const medyaTemizle = () => {
-    setSecilenMedya(null);
-    setMedyaOnizleme(null);
-    setMedyaTip(null);
-  };
+  const medyaTemizle = () => { setSecilenMedya(null); setMedyaOnizleme(null); setMedyaTip(null); };
 
   const gonderiYap = async () => {
     if (!gonderi.trim() && !secilenMedya) return;
@@ -503,7 +533,6 @@ function StudentDashboard() {
     }
     setYukleniyor(true);
     let medyaUrl = null;
-
     if (secilenMedya) {
       try {
         setMedyaYukleniyor(true);
@@ -537,7 +566,6 @@ function StudentDashboard() {
         return;
       }
     }
-
     await addDoc(collection(db, "posts"), {
       icerik: gonderi,
       yazar: kullanici.isim || auth.currentUser.email,
@@ -592,10 +620,7 @@ function StudentDashboard() {
   }, []);
 
   const bildirimGonder = async (iyiMisin = null) => {
-    if (secilenKategori.id === "diger" && !digerSebep.trim()) {
-      alert("Lutfen sebebinizi yazin!");
-      return;
-    }
+    if (secilenKategori.id === "diger" && !digerSebep.trim()) { alert("Lutfen sebebinizi yazin!"); return; }
     await addDoc(collection(db, "reports"), {
       tip: bildirimModal.tip,
       icerikId: bildirimModal.icerikId,
@@ -676,8 +701,41 @@ function StudentDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [kartArkaplan, kartYazi, kartIkincilYazi, karanlikMod, kullaniciFotolari, bildirdigim, yorumlar, acikYorumlar, yeniYorum]);
 
+  const sekmeStil = (sekmeId) => ({
+    flex: 1,
+    padding: "10px",
+    background: aktifSekme === sekmeId
+      ? "linear-gradient(135deg, #4f46e5, #7c3aed)"
+      : aktifSekmeHover === sekmeId
+        ? (karanlikMod ? "#4b5563" : "#d1d5db")
+        : (karanlikMod ? "#374151" : "#e5e7eb"),
+    color: aktifSekme === sekmeId ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"),
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontWeight: "700",
+    fontSize: "13px",
+    position: "relative",
+    transition: "all 0.2s ease",
+    transform: aktifSekme === sekmeId ? "scale(1.03)" : "scale(1)",
+    boxShadow: aktifSekme === sekmeId ? "0 4px 12px rgba(79,70,229,0.3)" : "none",
+    animation: aktifSekme === sekmeId ? "zipla 0.4s ease" : "none",
+  });
+
   return (
     <div style={{ minHeight: "100vh", ...arkaplanStili }}>
+      <style>{`
+        @keyframes zipla {
+          0%, 100% { transform: scale(1.03) translateY(0); }
+          40% { transform: scale(1.03) translateY(-3px); }
+          70% { transform: scale(1.03) translateY(-1px); }
+        }
+        @keyframes gradient-kayma {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+      `}</style>
       <div style={{ maxWidth: "600px", margin: "0 auto", padding: "20px", fontFamily: "sans-serif" }}>
 
         {secilenProfil && (
@@ -723,24 +781,28 @@ function StudentDashboard() {
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", background: karanlikMod ? "rgba(31,41,55,0.9)" : "rgba(255,255,255,0.9)", padding: "12px 16px", borderRadius: "12px" }}>
-          <h2 style={{ color: "#4f46e5", margin: 0 }}>Ogrenci Paneli</h2>
+        {/* HEADER */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", background: karanlikMod ? "rgba(31,41,55,0.92)" : "rgba(255,255,255,0.92)", padding: "12px 16px", borderRadius: "16px", backdropFilter: "blur(8px)", boxShadow: "0 4px 16px rgba(79,70,229,0.12)" }}>
+          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "800", background: "linear-gradient(135deg, #4f46e5, #7c3aed, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+            🌌 Galaksim
+          </h2>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span onClick={() => setSecilenProfil(auth.currentUser.uid)} style={{ fontSize: "14px", color: "#4f46e5", cursor: "pointer", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
               {kullaniciFotolari[auth.currentUser.uid] ? (
                 <img src={kullaniciFotolari[auth.currentUser.uid]} alt="" style={{ width: "28px", height: "28px", borderRadius: "50%", objectFit: "cover", border: "2px solid #4f46e5" }} />
               ) : (
-                <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "white", fontWeight: "700" }}>
+                <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "linear-gradient(135deg, #4f46e5, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "white", fontWeight: "700" }}>
                   {(kullanici.isim || "?")[0].toUpperCase()}
                 </div>
               )}
               {kullanici.isim}
             </span>
-            <button onClick={() => signOut(auth)} style={{ padding: "8px 16px", background: "#ef4444", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}>Cikis</button>
+            <button onClick={() => signOut(auth)} style={{ padding: "8px 16px", background: "linear-gradient(135deg, #ef4444, #dc2626)", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600" }}>Cikis</button>
           </div>
         </div>
 
-        <div style={{ background: kartArkaplan, padding: "12px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
+        {/* ARAMA */}
+        <div style={{ background: karanlikMod ? "rgba(31,41,55,0.92)" : "rgba(255,255,255,0.92)", padding: "12px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", marginBottom: "16px", backdropFilter: "blur(8px)" }}>
           <input type="text" placeholder="🔍 Ayni okuldan arkadas ara..." value={aramaMetni} onChange={e => setAramaMetni(e.target.value)}
             style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "14px", boxSizing: "border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
           {aramaMetni.trim() && (
@@ -753,7 +815,7 @@ function StudentDashboard() {
                     {kullaniciFotolari[k.id] ? (
                       <img src={kullaniciFotolari[k.id]} alt="" style={{ width: "32px", height: "32px", borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e7eb", flexShrink: 0 }} />
                     ) : (
-                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "white", fontWeight: "700", flexShrink: 0 }}>
+                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "linear-gradient(135deg, #4f46e5, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", color: "white", fontWeight: "700", flexShrink: 0 }}>
                         {(k.isim || "?")[0].toUpperCase()}
                       </div>
                     )}
@@ -767,7 +829,7 @@ function StudentDashboard() {
                   {kullanici.gelenIstekler.includes(k.id) && <span style={{ background: "#dbeafe", color: "#1e40af", padding: "2px 6px", borderRadius: "4px", fontSize: "10px" }}>Istegi var</span>}
                   {!kullanici.arkadaslar.includes(k.id) && !kullanici.gidenIstekler.includes(k.id) && !kullanici.gelenIstekler.includes(k.id) && k.okul && kullanici.okul && k.okul.trim().toLowerCase() === kullanici.okul.trim().toLowerCase() && (
                     <button onClick={async (e) => { e.stopPropagation(); await updateDoc(doc(db, "users", k.id), { gelenIstekler: arrayUnion(auth.currentUser.uid) }); await updateDoc(doc(db, "users", auth.currentUser.uid), { gidenIstekler: arrayUnion(k.id) }); setKullanici(prev => ({ ...prev, gidenIstekler: [...prev.gidenIstekler, k.id] })); }}
-                      style={{ background: "#4f46e5", color: "white", padding: "2px 8px", borderRadius: "4px", fontSize: "10px", border: "none", cursor: "pointer", fontWeight: "600" }}>
+                      style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "white", padding: "2px 8px", borderRadius: "4px", fontSize: "10px", border: "none", cursor: "pointer", fontWeight: "600" }}>
                       + Ekle
                     </button>
                   )}
@@ -777,31 +839,29 @@ function StudentDashboard() {
           )}
         </div>
 
+        {/* SEKMELER */}
         <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
-          <button onClick={() => setAktifSekme("tumu")}
-            style={{ flex: 1, padding: "10px", background: aktifSekme === "tumu" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "tumu" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
-            🌍 Tumu
-          </button>
-          <button onClick={() => setAktifSekme("arkadaslar")}
-            style={{ flex: 1, padding: "10px", background: aktifSekme === "arkadaslar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "arkadaslar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
-            👥 Arkadaslar
-            {kullanici.gelenIstekler.length > 0 && (
-              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
-                {kullanici.gelenIstekler.length}
-              </span>
-            )}
-          </button>
-          <button onClick={ogretmenSekmeAc}
-            style={{ flex: 1, padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ogretmen" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
-            🏫 Ogretmenim
-            {gorulmemisOgretmenPost > 0 && (
-              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
-                {gorulmemisOgretmenPost}
-              </span>
-            )}
-          </button>
+          {[
+            { id: "tumu", label: "🌍 Tumu", badge: 0 },
+            { id: "arkadaslar", label: "👥 Arkadaslar", badge: kullanici.gelenIstekler.length },
+            { id: "ogretmen", label: "🏫 Ogretmenim", badge: gorulmemisOgretmenPost }
+          ].map(({ id, label, badge }) => (
+            <button key={id}
+              onClick={() => id === "ogretmen" ? ogretmenSekmeAc() : setAktifSekme(id)}
+              onMouseEnter={() => setAktifSekmeHover(id)}
+              onMouseLeave={() => setAktifSekmeHover(null)}
+              style={sekmeStil(id)}>
+              {label}
+              {badge > 0 && (
+                <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#ef4444", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
+                  {badge}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
 
+        {/* ARKADAS İSTEKLERİ */}
         {aktifSekme === "arkadaslar" && kullanici.gelenIstekler.length > 0 && (
           <div style={{ background: kartArkaplan, padding: "12px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
             <h3 style={{ fontSize: "14px", color: kartYazi, margin: "0 0 10px" }}>📬 Bekleyen Istekler ({kullanici.gelenIstekler.length})</h3>
@@ -829,10 +889,11 @@ function StudentDashboard() {
           </div>
         )}
 
+        {/* GONDERI KUTUSU */}
         {aktifSekme !== "ogretmen" && (
-          <div style={{ background: kartArkaplan, padding: "20px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "24px" }}>
+          <div style={{ background: karanlikMod ? "rgba(31,41,55,0.92)" : "rgba(255,255,255,0.92)", padding: "20px", borderRadius: "16px", boxShadow: "0 4px 16px rgba(79,70,229,0.1)", marginBottom: "24px", backdropFilter: "blur(8px)" }}>
             <textarea placeholder="Ne dusunuyorsun?" value={gonderi} onChange={e => setGonderi(e.target.value)}
-              style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #ddd", fontSize: "15px", resize: "vertical", minHeight: "80px", boxSizing: "border-box", background: karanlikMod ? "#374151" : "white", color: kartYazi }} />
+              style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #e0e7ff", fontSize: "15px", resize: "vertical", minHeight: "80px", boxSizing: "border-box", background: karanlikMod ? "#374151" : "#f8f7ff", color: kartYazi }} />
             {hataMesaj && <div style={{ marginTop: "8px", padding: "8px 12px", background: "#fee2e2", color: "#ef4444", borderRadius: "8px", fontSize: "13px" }}>{hataMesaj}</div>}
             {medyaOnizleme && (
               <div style={{ marginTop: "10px", position: "relative", display: "inline-block" }}>
@@ -841,10 +902,7 @@ function StudentDashboard() {
                 ) : (
                   <img src={medyaOnizleme} alt="onizleme" style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "8px", border: "1px solid #ddd" }} />
                 )}
-                <button onClick={medyaTemizle}
-                  style={{ position: "absolute", top: "4px", right: "4px", background: "#ef4444", color: "white", border: "none", borderRadius: "50%", width: "24px", height: "24px", cursor: "pointer", fontSize: "12px", fontWeight: "700" }}>
-                  ✕
-                </button>
+                <button onClick={medyaTemizle} style={{ position: "absolute", top: "4px", right: "4px", background: "#ef4444", color: "white", border: "none", borderRadius: "50%", width: "24px", height: "24px", cursor: "pointer", fontSize: "12px", fontWeight: "700" }}>✕</button>
               </div>
             )}
             <div style={{ display: "flex", gap: "10px", marginTop: "10px", alignItems: "center" }}>
@@ -853,20 +911,31 @@ function StudentDashboard() {
                 <input type="file" accept="image/*,video/*" onChange={medyaSec} style={{ display: "none" }} />
               </label>
               <button onClick={gonderiYap} disabled={yukleniyor || medyaYukleniyor}
-                style={{ padding: "10px 24px", background: "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "15px" }}>
-                {medyaYukleniyor ? "Yukleniyor..." : yukleniyor ? "Paylasiliyor..." : "Paylas"}
+                style={{
+                  padding: "10px 24px",
+                  background: "linear-gradient(135deg, #4f46e5, #7c3aed, #ec4899)",
+                  backgroundSize: "200% 200%",
+                  animation: "gradient-kayma 3s ease infinite",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "15px",
+                  fontWeight: "700",
+                  boxShadow: "0 4px 12px rgba(79,70,229,0.3)"
+                }}>
+                {medyaYukleniyor ? "Yukleniyor..." : yukleniyor ? "Paylasiliyor..." : "✨ Paylas"}
               </button>
             </div>
           </div>
         )}
 
+        {/* OGRETMEN SEKMESI */}
         {aktifSekme === "ogretmen" && (
           <div>
             {kullanici.ogretmenIsim && (
               <div style={{ background: "#e0e7ff", padding: "10px 14px", borderRadius: "10px", marginBottom: "12px" }}>
-                <p style={{ margin: 0, fontSize: "13px", color: "#3730a3", fontWeight: "600" }}>
-                  👩‍🏫 Ogretmenin: {kullanici.ogretmenIsim}
-                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "#3730a3", fontWeight: "600" }}>👩‍🏫 Ogretmenin: {kullanici.ogretmenIsim}</p>
               </div>
             )}
             {ogretmenGonderiler.length === 0 ? (
@@ -879,6 +948,7 @@ function StudentDashboard() {
           </div>
         )}
 
+        {/* ANA AKIS */}
         {aktifSekme !== "ogretmen" && (
           <div>
             {filtrelenmisGonderiler.length === 0 && aktifSekme === "arkadaslar" && (
@@ -888,14 +958,10 @@ function StudentDashboard() {
             )}
             {filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" {...gonderiKartiProps} />)}
             {dahaFazlaYukleniyor && (
-              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "13px" }}>
-                Yukleniyor...
-              </div>
+              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "13px" }}>Yukleniyor...</div>
             )}
             {!dahaFazla && gonderiler.length > 0 && aktifSekme !== "arkadaslar" && (
-              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "12px" }}>
-                Tum paylasimlar gosterildi
-              </div>
+              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "12px" }}>Tum paylasimlar gosterildi</div>
             )}
           </div>
         )}
