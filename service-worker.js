@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zupii-v1';
+const CACHE_NAME = 'zupii-v2';
 
 // Sadece statik dosyalar cache'lenir — kullanıcı verisi asla!
 const STATIC_ASSETS = [
