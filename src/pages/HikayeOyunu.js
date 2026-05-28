@@ -313,7 +313,7 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
         <div style={{ height:"100%", background:"linear-gradient(90deg, #4f46e5, #7c3aed)", width:`${(sayfaNo / (aktifHikaye.sayfalar.length - 1)) * 100}%`, transition:"width 0.3s" }} />
       </div>
 
-      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"20px", overflowY:"auto" }}>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"20px", overflowY:"auto", minHeight:0 }}>
         {soruMu ? (
           <SoruSayfasi sayfa={mevcutSayfa} soruNo={soruSayaci + 1} onCevap={soruCevapla} />
         ) : (
