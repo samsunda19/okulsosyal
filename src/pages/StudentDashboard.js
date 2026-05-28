@@ -4,6 +4,7 @@ import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getD
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 import DM from "./DM";
+import HikayeOyunu from "./HikayeOyunu.js";
 import boslukResmi from "../background2.png";
 
 const GONDERI_LIMIT = 20;
@@ -330,6 +331,7 @@ function StudentDashboard() {
   const [medyaTip, setMedyaTip] = useState(null);
   const [medyaYukleniyor, setMedyaYukleniyor] = useState(false);
   const [aktifSekmeHover, setAktifSekmeHover] = useState(null);
+  const [hikayeOyunuAcik, setHikayeOyunuAcik] = useState(false);
   const arkadaslarRef = useRef([]);
   const sonDocRef = useRef(null);
   const dahaFazlaRef = useRef(false);
@@ -738,6 +740,10 @@ function StudentDashboard() {
       `}</style>
       <div style={{ maxWidth: "600px", margin: "0 auto", padding: "20px", fontFamily: "sans-serif" }}>
 
+        {hikayeOyunuAcik && (
+          <HikayeOyunu onKapat={() => setHikayeOyunuAcik(false)} karanlikMod={karanlikMod} />
+        )}
+
         {secilenProfil && (
           <ProfilSayfasi kullaniciId={secilenProfil} onKapat={() => { setSecilenProfil(null); kullaniciBilgisiGetir(); }} mevcutKullaniciRol="student" />
         )}
@@ -786,7 +792,11 @@ function StudentDashboard() {
           <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "800", background: "linear-gradient(135deg, #4f46e5, #7c3aed, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
             🌌 Galaksim
           </h2>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button onClick={() => setHikayeOyunuAcik(true)}
+              style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", border: "none", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "16px" }}>
+              🎮
+            </button>
             <span onClick={() => setSecilenProfil(auth.currentUser.uid)} style={{ fontSize: "14px", color: "#4f46e5", cursor: "pointer", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
               {kullaniciFotolari[auth.currentUser.uid] ? (
                 <img src={kullaniciFotolari[auth.currentUser.uid]} alt="" style={{ width: "28px", height: "28px", borderRadius: "50%", objectFit: "cover", border: "2px solid #4f46e5" }} />
