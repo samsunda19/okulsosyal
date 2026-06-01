@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { db, auth } from "../firebase";
 import { doc, getDoc, updateDoc, increment, collection, getDocs, query, where } from "firebase/firestore";
+import { skoruPaylas } from "./skorPaylas";
+import SekSekMatematik from "./SekSekMatematik";
+import Sudoku from "./Sudoku";
+import IslemOyunu from "./IslemOyunu";
 
 function SoruSayfasi({ sayfa, soruNo, onCevap }) {
   const [secilen, setSecilen] = useState(null);
@@ -58,10 +62,14 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
   const [bitti, setBitti] = useState(false);
   const [soruCevaplandi, setSoruCevaplandi] = useState(false);
   const [hikayeler, setHikayeler] = useState([]);
+  const [paylasildi, setPaylasildi] = useState(false);
+  const [paylasiliyor, setPaylasiliyor] = useState(false);
+  const [yorum, setYorum] = useState("");
   const [ekran, setEkran] = useState("kategoriler"); // kategoriler | siniflar | hikayeler
   const [secilenSinif, setSecilenSinif] = useState(null);
   const [yukleniyor, setYukleniyor] = useState(true);
   const oyunRef = useRef(null);
+  const okumaRef = useRef(null);
   const touchStartY = useRef(null);
   const wheelZamani = useRef(0);
   const soruCevaplandıRef = useRef(false);
@@ -70,6 +78,10 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
 
   useEffect(() => {
     hikayeGetir();
+    // Oyun acikken arka plan (akis) kaymasin
+    const eskiOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = eskiOverflow; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hikayeGetir = async () => {
@@ -122,7 +134,8 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
   oncekiSayfaRef.current = oncekiSayfa;
 
   useEffect(() => {
-    const el = oyunRef.current;
+    if (!aktifHikaye || bitti) return;
+    const el = okumaRef.current;
     if (!el) return;
     const handler = (e) => {
       e.preventDefault();
@@ -141,7 +154,7 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
+  }, [aktifHikaye, bitti]);
 
   const handleTouchStart = (e) => { touchStartY.current = e.touches[0].clientY; };
   const handleTouchEnd = (e) => {
@@ -159,6 +172,26 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
     setSoruSayaci(0);
     setBitti(false);
     setSoruCevaplandi(false);
+    setPaylasildi(false);
+    setYorum("");
+  };
+
+  const paylas = async (toplamPuan) => {
+    setPaylasiliyor(true);
+    try {
+      await skoruPaylas({
+        oyunAdi: aktifHikaye.baslik,
+        ikon: "📖",
+        puan: toplamPuan,
+        altYazi: "Hikaye Okuma",
+        renk: "#7c3aed",
+        yorum: yorum
+      });
+      setPaylasildi(true);
+    } catch (e) {
+      alert("Paylaşılamadı: " + e.message);
+    }
+    setPaylasiliyor(false);
   };
 
   const soruCevapla = (puan) => {
@@ -211,13 +244,29 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
       ? hikayeler.filter(h => parseInt((h.seviye || "").match(/\d+/)?.[0]) === secilenSinif)
       : [];
 
+    // MATEMATIK OYUNU
+    if (ekran === "matematik") {
+      return <SekSekMatematik onKapat={() => setEkran("kategoriler")} />;
+    }
+
+    // SUDOKU OYUNU
+    if (ekran === "sudoku") {
+      return <Sudoku onKapat={() => setEkran("kategoriler")} />;
+    }
+
+    // ISLEM OYUNU
+    if (ekran === "islem") {
+      return <IslemOyunu onKapat={() => setEkran("kategoriler")} />;
+    }
+
     // EKRAN 1: Oyun Kategorileri
     if (ekran === "kategoriler") {
       const oyunlar = [
         { id: "hikaye", ad: "Hikaye Okuma", ikon: "📖", renk: "#7c3aed", aktif: true, aciklama: "Hikayeleri oku, soruları cevapla" },
-        { id: "matematik", ad: "Sek Sek Matematik", ikon: "🦘", renk: "#10b981", aktif: false, aciklama: "Toplama, çıkarma, çarpma" },
+        { id: "matematik", ad: "Sek Sek Matematik", ikon: "🦘", renk: "#10b981", aktif: true, aciklama: "Engelleri geç, işlemleri çöz" },
         { id: "bilim", ad: "Bil Bakalım Ben Bilim", ikon: "🔬", renk: "#3b82f6", aktif: false, aciklama: "Fen ve doğa soruları" },
-        { id: "sudoku", ad: "Sudoku", ikon: "🔢", renk: "#f59e0b", aktif: false, aciklama: "Sayı bulmaca" }
+        { id: "sudoku", ad: "Sudoku", ikon: "🔢", renk: "#f59e0b", aktif: true, aciklama: "Sayıları yerleştir" },
+        { id: "islem", ad: "İşlem Ustası", ikon: "➕", renk: "#10b981", aktif: true, aciklama: "Toplama ve çıkarma" }
       ];
       return (
         <div ref={oyunRef} style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"#0f0f1a", zIndex:500, display:"flex", flexDirection:"column" }}>
@@ -227,7 +276,7 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
           </div>
           <div style={{ flex:1, overflowY:"auto", padding:"20px" }}>
             {oyunlar.map(o => (
-              <div key={o.id} onClick={() => { if (o.aktif) setEkran("siniflar"); }}
+              <div key={o.id} onClick={() => { if (o.aktif) setEkran(o.id === "matematik" ? "matematik" : o.id === "sudoku" ? "sudoku" : o.id === "islem" ? "islem" : "siniflar"); }}
                 style={{ background:"#1a1a2e", borderRadius:"16px", padding:"20px", marginBottom:"14px", cursor: o.aktif ? "pointer" : "default", border:`1px solid ${o.aktif ? o.renk : "#2a2a3e"}`, opacity: o.aktif ? 1 : 0.55, display:"flex", alignItems:"center", gap:"16px", position:"relative" }}>
                 <div style={{ fontSize:"36px" }}>{o.ikon}</div>
                 <div style={{ flex:1 }}>
@@ -326,6 +375,15 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
           style={{ padding:"14px 32px", background:"linear-gradient(135deg, #4f46e5, #7c3aed)", color:"white", border:"none", borderRadius:"12px", cursor:"pointer", fontSize:"15px", fontWeight:"600", marginBottom:"12px", width:"200px" }}>
           Diğer Hikayeler
         </button>
+        {!paylasildi && (
+          <input type="text" value={yorum} onChange={e => setYorum(e.target.value)} maxLength={100}
+            placeholder="Bir şeyler yaz (isteğe bağlı)"
+            style={{ width:"200px", padding:"10px 14px", marginBottom:"10px", background:"#1a1a2e", color:"#f0e6d3", border:"1px solid #333", borderRadius:"10px", fontSize:"13px", boxSizing:"border-box", fontFamily:"Georgia, serif" }} />
+        )}
+        <button onClick={() => paylas(toplamPuan)} disabled={paylasildi || paylasiliyor}
+          style={{ padding:"12px 32px", background: paylasildi ? "#10b981" : "#1a1a2e", color: paylasildi ? "white" : "#7c3aed", border: paylasildi ? "none" : "2px solid #7c3aed", borderRadius:"12px", cursor: paylasildi ? "default" : "pointer", fontSize:"14px", fontWeight:"600", width:"200px", marginBottom:"12px" }}>
+          {paylasildi ? "✓ Paylaşıldı" : paylasiliyor ? "Paylaşılıyor..." : "📢 Akışta Paylaş"}
+        </button>
         <button onClick={onKapat}
           style={{ padding:"12px 32px", background:"#222", color:"#888", border:"none", borderRadius:"12px", cursor:"pointer", fontSize:"14px", width:"200px" }}>
           Kapat
@@ -340,7 +398,7 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
   const toplamMetin = aktifHikaye.sayfalar.filter(s => s.tip === "metin" || s.tip === "son").length;
 
   return (
-    <div ref={oyunRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+    <div ref={okumaRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
       style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"#0f0f1a", zIndex:500, display:"flex", flexDirection:"column" }}>
 
       <div style={{ padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", borderBottom:"1px solid #1a1a2e" }}>
