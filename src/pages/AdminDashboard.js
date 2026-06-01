@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db, auth } from "../firebase";
-import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp, getDoc, addDoc, deleteDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
+
+const WORKER_URL = process.env.REACT_APP_WORKER_URL;
 
 const MedyaGoster = ({ url }) => {
   if (!url) return null;
@@ -44,6 +46,15 @@ function AdminDashboard() {
   const [postDetay, setPostDetay] = useState({});
   const [acikBildirimPost, setAcikBildirimPost] = useState({});
 
+  // AI Asistan state
+  const [mesajlar, setMesajlar] = useState([]);
+  const [girdi, setGirdi] = useState("");
+  const [asistanYukleniyor, setAsistanYukleniyor] = useState(false);
+  const [bekleyenHikaye, setBekleyenHikaye] = useState(null);
+  const [hikayeKaydetYukleniyor, setHikayeKaydetYukleniyor] = useState(false);
+  const [kayitliHikayeler, setKayitliHikayeler] = useState([]);
+  const mesajSonuRef = useRef(null);
+
   const bg = karanlikMod ? "#111827" : "#f9fafb";
   const kartBg = karanlikMod ? "#1f2937" : "white";
   const yaziRenk = karanlikMod ? "#f3f4f6" : "#111827";
@@ -52,6 +63,10 @@ function AdminDashboard() {
   const borderRenk = karanlikMod ? "#374151" : "#e5e7eb";
 
   useEffect(() => { verileriGetir(); }, []);
+
+  useEffect(() => {
+    if (mesajSonuRef.current) mesajSonuRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [mesajlar]);
 
   const verileriGetir = async () => {
     const postSnapshot = await getDocs(collection(db, "posts"));
@@ -73,7 +88,162 @@ function AdminDashboard() {
     const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
     const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     setBildirimler(tumReports.filter(r => r.adminaIletti === true && !r.adminSildi));
+
+    // Hikayeleri getir + 2 aydan eski olanlari tamamen sil
+    const hikayeSnapshot = await getDocs(collection(db, "hikayeler"));
+    const ikiAyOnce = Date.now() - (60 * 24 * 60 * 60 * 1000);
+    const aktifHikayeler = [];
+    for (const d of hikayeSnapshot.docs) {
+      const h = { firestoreId: d.id, ...d.data() };
+      const hikayeZamani = (h.tarih?.seconds || 0) * 1000;
+      if (hikayeZamani && hikayeZamani < ikiAyOnce) {
+        // 2 aydan eski - tamamen sil
+        await deleteDoc(doc(db, "hikayeler", d.id));
+      } else {
+        aktifHikayeler.push(h);
+      }
+    }
+    aktifHikayeler.sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
+    setKayitliHikayeler(aktifHikayeler);
+
     setYukleniyor(false);
+  };
+
+  // ===== AI ASISTAN =====
+  const SISTEM_PROMPT = `Sen Zupii adlı Türk çocuk eğitim platformunun yönetici asistanısın. Admin ve öğretmenlere yardım edersin.
+
+Yapabileceklerin:
+- Çocuklar için hikaye/oyun içeriği üretmek
+- Ödev, soru, etkinlik hazırlamak
+- Duyuru, metin yazmak ve düzenlemek
+- Genel sorulara yardımcı olmak
+
+Dil Türkçe, sade ve samimi olsun. Çocuklara yönelik içerikte şiddet, korku, olumsuzluk olmasın.
+
+ÖNEMLI - HIKAYE ÜRETIMI:
+Kullanıcı OYUN/HIKAYE üretmeni isterse (örn "kedilerle ilgili hikaye üret"), cevabının SONUNA şu formatta özel bir blok ekle:
+
+<<<HIKAYE_JSON>>>
+{
+  "baslik": "...",
+  "seviye": "2. Sinif",
+  "konu": "kediler",
+  "sayfalar": [
+    {"tip": "metin", "metin": "..."},
+    {"tip": "soru", "soru": "...?", "secenekler": ["A", "B", "C"], "dogru": 0}
+  ]
+}
+<<<HIKAYE_SON>>>
+
+Kurallar: Sorular 3 şıklı olsun, "dogru" değeri 0/1/2. Kullanıcı sayfa sayısı ve soru aralığı belirtirse ona uy. Belirtmezse 12 sayfa, 3 soru yap. Hikaye JSON bloğundan önce kısa bir mesaj yaz ("İşte kedilerle ilgili hikaye hazır!" gibi).
+
+Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.) bu bloğu HIC EKLEME, normal cevap ver.`;
+
+  const asistanGonder = async () => {
+    if (!girdi.trim() || asistanYukleniyor) return;
+    if (!WORKER_URL) { alert("Worker URL bulunamadi! .env dosyasini kontrol edin."); return; }
+
+    const yeniMesaj = { rol: "user", icerik: girdi };
+    const guncelMesajlar = [...mesajlar, yeniMesaj];
+    setMesajlar(guncelMesajlar);
+    setGirdi("");
+    setAsistanYukleniyor(true);
+    setBekleyenHikaye(null);
+
+    // Son 10 mesaji gonder (maliyet kontrolu)
+    const sonMesajlar = guncelMesajlar.slice(-10).map(m => ({ role: m.rol, content: m.icerik }));
+
+    try {
+      const response = await fetch(WORKER_URL + "/anthropic", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + await auth.currentUser.getIdToken()
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 4000,
+          system: SISTEM_PROMPT,
+          messages: sonMesajlar
+        })
+      });
+
+      const data = await response.json();
+      let metin = data.content[0].text;
+
+      // Hikaye JSON var mi kontrol et
+      const hikayeMatch = metin.match(/<<<HIKAYE_JSON>>>([\s\S]*?)<<<HIKAYE_SON>>>/);
+      if (hikayeMatch) {
+        try {
+          const hikaye = JSON.parse(hikayeMatch[1].trim());
+          // Cevap siklarini karistir (Haiku hep B yapiyor)
+          if (hikaye.sayfalar) {
+            hikaye.sayfalar.forEach(s => {
+              if (s.tip === "soru" && Array.isArray(s.secenekler) && typeof s.dogru === "number") {
+                const dogruMetin = s.secenekler[s.dogru];
+                // Fisher-Yates karistirma
+                for (let k = s.secenekler.length - 1; k > 0; k--) {
+                  const r = Math.floor(Math.random() * (k + 1));
+                  [s.secenekler[k], s.secenekler[r]] = [s.secenekler[r], s.secenekler[k]];
+                }
+                s.dogru = s.secenekler.indexOf(dogruMetin);
+              }
+            });
+          }
+          setBekleyenHikaye(hikaye);
+          metin = metin.replace(/<<<HIKAYE_JSON>>>[\s\S]*?<<<HIKAYE_SON>>>/, "").trim();
+        } catch (e) {
+          console.error("Hikaye JSON parse hatasi:", e);
+        }
+      }
+
+      setMesajlar(prev => [...prev, { rol: "assistant", icerik: metin }]);
+    } catch (err) {
+      setMesajlar(prev => [...prev, { rol: "assistant", icerik: "❌ Hata: " + err.message }]);
+    }
+    setAsistanYukleniyor(false);
+  };
+
+  const hikayeKaydet = async () => {
+    if (!bekleyenHikaye) return;
+    setHikayeKaydetYukleniyor(true);
+    try {
+      const id = (bekleyenHikaye.baslik || "hikaye").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 30);
+      const yeniDoc = await addDoc(collection(db, "hikayeler"), {
+        ...bekleyenHikaye,
+        id: id,
+        olusturanUid: auth.currentUser.uid,
+        tarih: serverTimestamp(),
+        aktif: true
+      });
+      setKayitliHikayeler(prev => [{ firestoreId: yeniDoc.id, ...bekleyenHikaye, tarih: { seconds: Date.now() / 1000 } }, ...prev]);
+      setBekleyenHikaye(null);
+      setMesajlar(prev => [...prev, { rol: "assistant", icerik: "✅ Hikaye kaydedildi! Oyunlar bölümünde görünecek." }]);
+    } catch (err) {
+      alert("Kayıt hatası: " + err.message);
+    }
+    setHikayeKaydetYukleniyor(false);
+  };
+
+  const kayitliHikayeSil = async (firestoreId, baslik) => {
+    if (!window.confirm(`"${baslik}" hikayesini tamamen silmek istediginizden emin misiniz?`)) return;
+    try {
+      await deleteDoc(doc(db, "hikayeler", firestoreId));
+      setKayitliHikayeler(prev => prev.filter(h => h.firestoreId !== firestoreId));
+    } catch (err) {
+      alert("Silme hatası: " + err.message);
+    }
+  };
+
+  const hikayeKacGun = (tarih) => {
+    if (!tarih?.seconds) return 0;
+    return Math.floor((Date.now() - tarih.seconds * 1000) / (24 * 60 * 60 * 1000));
+  };
+
+  const sohbetTemizle = () => {
+    if (mesajlar.length > 0 && !window.confirm("Sohbeti temizlemek istediginizden emin misiniz?")) return;
+    setMesajlar([]);
+    setBekleyenHikaye(null);
   };
 
   const handleSil = async (gonderiId) => {
@@ -402,25 +572,179 @@ function AdminDashboard() {
       </div>
 
       <div style={{ display: "flex", gap: "6px", marginBottom: "20px", flexWrap: "wrap" }}>
-        {[["etkilesimler", "💬 Paylasimlar"], ["bildirimler", "🚩 Bildirimler"], ["bekleyenler", "⏳ Onaylar"]].map(([key, label]) => (
+        {[
+          ["etkilesimler", "💬 Paylasimlar", 0],
+          ["bildirimler", "🚩 Bildirimler", yeniBildirimSayisi],
+          ["bekleyenler", "⏳ Onaylar", bekleyenler.length],
+          ["asistan", "🤖 Asistan", 0]
+        ].map(([key, label, badge]) => (
           <button key={key} onClick={() => setAktifSekme(key)}
-            style={{ flex: "1 1 30%", padding: "10px", background: aktifSekme === key ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === key ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
+            style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === key ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === key ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px", position: "relative" }}>
             {label}
-            {key === "bildirimler" && yeniBildirimSayisi > 0 && (
-              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: acilBildirimSayisi > 0 ? "#ef4444" : "#f59e0b", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
-                {yeniBildirimSayisi}
-              </span>
-            )}
-            {key === "bekleyenler" && bekleyenler.length > 0 && (
-              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#10b981", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
-                {bekleyenler.length}
+            {badge > 0 && (
+              <span style={{ position: "absolute", top: "-6px", right: "-6px", background: key === "bildirimler" && acilBildirimSayisi > 0 ? "#ef4444" : key === "bildirimler" ? "#f59e0b" : "#10b981", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
+                {badge}
               </span>
             )}
           </button>
         ))}
       </div>
 
-      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "bekleyenler" ? (
+      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "asistan" ? (
+        <div>
+          <div style={{ background: kartBg, borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", overflow: "hidden", display: "flex", flexDirection: "column", height: "500px" }}>
+            {/* Baslik */}
+            <div style={{ padding: "14px 16px", borderBottom: `1px solid ${borderRenk}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "15px", color: yaziRenk }}>🤖 AI Asistan</h3>
+                <p style={{ margin: "2px 0 0", fontSize: "11px", color: ikincilYazi }}>Hikaye, ödev, içerik üret · Sadece yönetim için</p>
+              </div>
+              {mesajlar.length > 0 && (
+                <button onClick={sohbetTemizle}
+                  style={{ padding: "6px 12px", background: karanlikMod ? "#374151" : "#f3f4f6", color: ikincilYazi, border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
+                  🗑️ Temizle
+                </button>
+              )}
+            </div>
+
+            {/* Mesajlar */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+              {mesajlar.length === 0 && (
+                <div style={{ textAlign: "center", padding: "30px 20px", color: ikincilYazi }}>
+                  <div style={{ fontSize: "40px", marginBottom: "12px" }}>💬</div>
+                  <p style={{ fontSize: "14px", margin: "0 0 16px" }}>Merhaba! Sana nasıl yardımcı olabilirim?</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxWidth: "400px", margin: "0 auto" }}>
+                    {[
+                      "Kedilerle ilgili 12 sayfa hikaye üret, her 4 sayfada bir soru olsun",
+                      "3. sınıf için çıkarma işlemi ödevi hazırla",
+                      "Okul gezisi için veli duyurusu yaz"
+                    ].map((ornek, i) => (
+                      <button key={i} onClick={() => setGirdi(ornek)}
+                        style={{ padding: "10px 14px", background: karanlikMod ? "#374151" : "#f9fafb", border: `1px solid ${borderRenk}`, borderRadius: "10px", color: yaziRenk, fontSize: "13px", cursor: "pointer", textAlign: "left" }}>
+                        💡 {ornek}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {mesajlar.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.rol === "user" ? "flex-end" : "flex-start", marginBottom: "12px" }}>
+                  <div style={{
+                    maxWidth: "80%", padding: "10px 14px", borderRadius: "14px",
+                    background: m.rol === "user" ? "linear-gradient(135deg, #4f46e5, #7c3aed)" : (karanlikMod ? "#374151" : "#f3f4f6"),
+                    color: m.rol === "user" ? "white" : yaziRenk,
+                    fontSize: "14px", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word"
+                  }}>
+                    {m.icerik}
+                  </div>
+                </div>
+              ))}
+
+              {asistanYukleniyor && (
+                <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: "12px" }}>
+                  <div style={{ padding: "10px 14px", borderRadius: "14px", background: karanlikMod ? "#374151" : "#f3f4f6", color: ikincilYazi, fontSize: "14px" }}>
+                    ⏳ Yazıyor...
+                  </div>
+                </div>
+              )}
+
+              {/* Bekleyen hikaye kaydet karti */}
+              {bekleyenHikaye && (
+                <div style={{ background: karanlikMod ? "#1e3a5f" : "#eff6ff", border: "2px solid #4f46e5", borderRadius: "12px", padding: "14px", marginBottom: "12px" }}>
+                  <p style={{ margin: "0 0 4px", fontSize: "14px", fontWeight: "600", color: "#4f46e5" }}>📖 {bekleyenHikaye.baslik}</p>
+                  <p style={{ margin: "0 0 10px", fontSize: "12px", color: ikincilYazi }}>
+                    {bekleyenHikaye.seviye || ""} · {bekleyenHikaye.sayfalar?.length} sayfa · {bekleyenHikaye.sayfalar?.filter(s => s.tip === "soru").length} soru
+                  </p>
+                  <div style={{ maxHeight: "280px", overflowY: "auto", marginBottom: "12px", background: karanlikMod ? "#0f1f33" : "white", borderRadius: "8px", padding: "10px" }}>
+                    {bekleyenHikaye.sayfalar?.map((s, i) => (
+                      <div key={i} style={{ padding: "8px 0", borderBottom: i < bekleyenHikaye.sayfalar.length - 1 ? `1px solid ${borderRenk}` : "none" }}>
+                        <span style={{ fontSize: "10px", color: s.tip === "soru" ? "#f59e0b" : ikincilYazi, fontWeight: "600", letterSpacing: "1px" }}>
+                          {s.tip === "soru" ? "⭐ SORU" : `SAYFA ${i + 1}`}
+                        </span>
+                        <p style={{ margin: "4px 0 0", fontSize: "13px", color: yaziRenk, lineHeight: 1.5 }}>
+                          {s.tip === "soru" ? s.soru : s.metin}
+                        </p>
+                        {s.tip === "soru" && s.secenekler && (
+                          <div style={{ marginTop: "6px", display: "flex", flexDirection: "column", gap: "2px" }}>
+                            {s.secenekler.map((sec, j) => (
+                              <span key={j} style={{ fontSize: "12px", color: j === s.dogru ? "#10b981" : ikincilYazi, fontWeight: j === s.dogru ? "600" : "normal" }}>
+                                {String.fromCharCode(65 + j)}) {sec} {j === s.dogru ? "✓" : ""}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button onClick={hikayeKaydet} disabled={hikayeKaydetYukleniyor}
+                      style={{ flex: 1, padding: "10px", background: "#10b981", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
+                      {hikayeKaydetYukleniyor ? "Kaydediliyor..." : "✅ Oyunlara Ekle"}
+                    </button>
+                    <button onClick={() => setBekleyenHikaye(null)}
+                      style={{ padding: "10px 16px", background: "#6b7280", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px" }}>
+                      İptal
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div ref={mesajSonuRef} />
+            </div>
+
+            {/* Girdi */}
+            <div style={{ padding: "12px 16px", borderTop: `1px solid ${borderRenk}`, display: "flex", gap: "8px", alignItems: "flex-end" }}>
+              <textarea value={girdi} onChange={e => setGirdi(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); asistanGonder(); } }}
+                placeholder="Mesajını yaz... (Enter ile gönder)"
+                rows={1}
+                style={{ flex: 1, padding: "10px 14px", borderRadius: "10px", border: `1px solid ${borderRenk}`, fontSize: "14px", resize: "none", maxHeight: "120px", background: inputBg, color: yaziRenk, fontFamily: "inherit", boxSizing: "border-box" }} />
+              <button onClick={asistanGonder} disabled={asistanYukleniyor || !girdi.trim()}
+                style={{ padding: "10px 18px", background: (asistanYukleniyor || !girdi.trim()) ? "#9ca3af" : "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "white", border: "none", borderRadius: "10px", cursor: (asistanYukleniyor || !girdi.trim()) ? "not-allowed" : "pointer", fontWeight: "600", fontSize: "14px", whiteSpace: "nowrap" }}>
+                Gönder
+              </button>
+            </div>
+          </div>
+
+          {/* Kayitli Hikayeler Listesi */}
+          <div style={{ marginTop: "20px" }}>
+            <h3 style={{ color: ikincilYazi, marginBottom: "12px", fontSize: "15px" }}>
+              📚 Kayıtlı Hikayeler ({kayitliHikayeler.length})
+            </h3>
+            <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 12px" }}>
+              💡 Hikayeler 7 gün sonra öğrencilerden gizlenir, 2 ay sonra otomatik silinir. Sorunlu hikayeyi hemen silebilirsin.
+            </p>
+            {kayitliHikayeler.length === 0 ? (
+              <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}>
+                <p>Henüz kayıtlı hikaye yok.</p>
+              </div>
+            ) : (
+              kayitliHikayeler.map((h) => {
+                const gun = hikayeKacGun(h.tarih);
+                const gizli = gun >= 7;
+                return (
+                  <div key={h.firestoreId} style={{ background: kartBg, padding: "14px 16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: gizli ? 0.6 : 1 }}>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ margin: "0 0 4px", fontSize: "14px", fontWeight: "600", color: yaziRenk }}>
+                        {h.baslik}
+                        {gizli && <span style={{ marginLeft: "8px", fontSize: "10px", background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: "4px" }}>GİZLİ</span>}
+                      </p>
+                      <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>
+                        {h.seviye || ""} · {h.sayfalar?.length} sayfa · {gun} gün önce
+                      </p>
+                    </div>
+                    <button onClick={() => kayitliHikayeSil(h.firestoreId, h.baslik)}
+                      style={{ padding: "6px 12px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>
+                      🗑️ Sil
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : aktifSekme === "bekleyenler" ? (
         <div>
           {bekleyenler.length === 0 ? (
             <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}><p>Onay bekleyen kullanici yok.</p></div>
