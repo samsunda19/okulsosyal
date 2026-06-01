@@ -242,9 +242,9 @@ function Sudoku({ onKapat, baslangicZorluk }) {
                     if ((ri !== i || rj !== j) && tahta[ri][rj] === v) cakisma = true;
                   }
               }
-              // 3x3 blok ayrimi icin kalin kenarlik
-              const mr = (j % 3 === 2 && j !== 8) ? "3px" : "0";
-              const mb = (i % 3 === 2 && i !== 8) ? "3px" : "0";
+              // 3x3 blok ayrimi icin kalin parlak kenarlik
+              const sagBlok = (j % 3 === 2 && j !== 8) ? "4px solid #a78bfa" : "none";
+              const altBlok = (i % 3 === 2 && i !== 8) ? "4px solid #a78bfa" : "none";
               return (
                 <div key={`${i}-${j}`} onClick={() => hucreSec(i, j)}
                   style={{
@@ -255,7 +255,7 @@ function Sudoku({ onKapat, baslangicZorluk }) {
                     fontSize: "18px", fontWeight: "bold",
                     cursor: verilenHucre ? "default" : "pointer",
                     fontFamily: "Georgia, serif", userSelect: "none",
-                    marginRight: mr, marginBottom: mb
+                    borderRight: sagBlok, borderBottom: altBlok, boxSizing: "border-box"
                   }}>
                   {v !== 0 ? v : ""}
                 </div>
