@@ -14,6 +14,8 @@ jobs:
           node-version: 24
       - run: npm install
       - run: npm run build
+        env:
+          REACT_APP_WORKER_URL: https://zupii-photos.samsunda-yasamak.workers.dev
       - uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
