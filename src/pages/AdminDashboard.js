@@ -162,7 +162,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
         },
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 4000,
+          max_tokens: 8000,
           system: SISTEM_PROMPT,
           messages: sonMesajlar
         })
@@ -171,17 +171,29 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
       const data = await response.json();
       let metin = data.content[0].text;
 
-      // Hikaye JSON var mi kontrol et
-      const hikayeMatch = metin.match(/<<<HIKAYE_JSON>>>([\s\S]*?)<<<HIKAYE_SON>>>/);
-      if (hikayeMatch) {
+      // Hikaye JSON var mi kontrol et (kapanis etiketi eksikse de yakala)
+      let hikayeJsonMetni = null;
+      const tamMatch = metin.match(/<<<HIKAYE_JSON>>>([\s\S]*?)<<<HIKAYE_SON>>>/);
+      if (tamMatch) {
+        hikayeJsonMetni = tamMatch[1].trim();
+      } else if (metin.includes("<<<HIKAYE_JSON>>>")) {
+        // Acilis var ama kapanis yok - acilistan sonraki JSON'u al
+        const sonra = metin.split("<<<HIKAYE_JSON>>>")[1] || "";
+        const ilkParantez = sonra.indexOf("{");
+        const sonParantez = sonra.lastIndexOf("}");
+        if (ilkParantez !== -1 && sonParantez !== -1) {
+          hikayeJsonMetni = sonra.slice(ilkParantez, sonParantez + 1);
+        }
+      }
+
+      if (hikayeJsonMetni) {
         try {
-          const hikaye = JSON.parse(hikayeMatch[1].trim());
+          const hikaye = JSON.parse(hikayeJsonMetni);
           // Cevap siklarini karistir (Haiku hep B yapiyor)
           if (hikaye.sayfalar) {
             hikaye.sayfalar.forEach(s => {
               if (s.tip === "soru" && Array.isArray(s.secenekler) && typeof s.dogru === "number") {
                 const dogruMetin = s.secenekler[s.dogru];
-                // Fisher-Yates karistirma
                 for (let k = s.secenekler.length - 1; k > 0; k--) {
                   const r = Math.floor(Math.random() * (k + 1));
                   [s.secenekler[k], s.secenekler[r]] = [s.secenekler[r], s.secenekler[k]];
@@ -191,9 +203,11 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
             });
           }
           setBekleyenHikaye(hikaye);
-          metin = metin.replace(/<<<HIKAYE_JSON>>>[\s\S]*?<<<HIKAYE_SON>>>/, "").trim();
+          metin = metin.replace(/<<<HIKAYE_JSON>>>[\s\S]*?(<<<HIKAYE_SON>>>|$)/, "").trim();
+          if (!metin) metin = "İşte hikaye hazır! Aşağıdan önizleyip yayınlayabilirsin. 👇";
         } catch (e) {
           console.error("Hikaye JSON parse hatasi:", e);
+          metin = metin.replace(/<<<HIKAYE_JSON>>>[\s\S]*/, "").trim() + "\n\n⚠️ Hikaye oluşturuldu ama bir format sorunu oldu. 'Tekrar üret' veya kısaca yeniden iste lütfen.";
         }
       }
 
