@@ -91,6 +91,16 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
   const ogrenciyim = mevcutKullaniciRol === "student";
   const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
 
+  // Silinen gonderi 1 haftadan eskiyse profilde de gizlenir (kozmetik)
+  const profildeGizle = (g) => {
+    const kaldirildi = g.ogrenciSildi || g.veliKaldirdi || g.ogretmenKaldirdi || g.adminSildi;
+    if (!kaldirildi) return false;
+    const t = g.silinmeTarihi || g.adminSildiTarihi;
+    const sn = t?.seconds;
+    if (!sn) return false;
+    return (Date.now() - sn * 1000) > 7 * 24 * 60 * 60 * 1000;
+  };
+
   useEffect(() => {
     const getir = async () => {
       // Profil bilgisi
@@ -154,7 +164,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       limit(POST_LIMIT)
     );
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => !profildeGizle(g));
     setGonderiler(liste);
     setSonDoc(snapshot.docs[snapshot.docs.length - 1] || null);
     setDahaFazla(snapshot.docs.length === POST_LIMIT);
@@ -171,7 +181,7 @@ function ProfilSayfasi({ kullaniciId, onKapat, mevcutKullaniciRol }) {
       limit(POST_LIMIT)
     );
     const snapshot = await getDocs(q);
-    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => !profildeGizle(g));
     setGonderiler(prev => [...prev, ...liste]);
     setSonDoc(snapshot.docs[snapshot.docs.length - 1] || null);
     setDahaFazla(snapshot.docs.length === POST_LIMIT);

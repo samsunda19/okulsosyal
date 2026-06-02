@@ -89,9 +89,19 @@ function AdminDashboard() {
     const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     setBildirimler(tumReports.filter(r => r.adminaIletti === true && !r.adminSildi));
 
+    // 2 aydan eski SILINMIS gonderileri Firebase'den tamamen kaldir
+    const ikiAyOnce = Date.now() - (60 * 24 * 60 * 60 * 1000);
+    for (const p of tumPosts) {
+      const kaldirildi = p.ogrenciSildi || p.veliKaldirdi || p.ogretmenKaldirdi || p.adminSildi;
+      const t = p.silinmeTarihi || p.adminSildiTarihi;
+      const sn = t?.seconds;
+      if (kaldirildi && sn && (Date.now() - sn * 1000) > 0 && (sn * 1000) < ikiAyOnce) {
+        await deleteDoc(doc(db, "posts", p.id));
+      }
+    }
+
     // Hikayeleri getir + 2 aydan eski olanlari tamamen sil
     const hikayeSnapshot = await getDocs(collection(db, "hikayeler"));
-    const ikiAyOnce = Date.now() - (60 * 24 * 60 * 60 * 1000);
     const aktifHikayeler = [];
     for (const d of hikayeSnapshot.docs) {
       const h = { firestoreId: d.id, ...d.data() };
