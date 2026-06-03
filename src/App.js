@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, deleteUser } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { logKaydet } from "./logKaydet";
 import StudentDashboard from "./pages/StudentDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
@@ -23,7 +24,9 @@ function LoginForm({ tip, onKapat }) {
     setHata("");
     setYukleniyor(true);
     try {
-      await signInWithEmailAndPassword(auth, email, sifre);
+      const cred = await signInWithEmailAndPassword(auth, email, sifre);
+      const token = await cred.user.getIdToken();
+      logKaydet(token, { uid: cred.user.uid, islem: "giris", detay: email });
     } catch (err) {
       setHata("E-posta veya sifre hatali!");
       setYukleniyor(false);
@@ -114,6 +117,8 @@ function KayitForm({ onKapat }) {
         return;
       }
 
+      const kayitToken = await userCredential.user.getIdToken();
+      await logKaydet(kayitToken, { uid: userCredential.user.uid, islem: "kayit", detay: email });
       await signOut(auth);
       setBasarili(true);
     } catch (err) {
