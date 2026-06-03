@@ -3,8 +3,19 @@ import { db, auth } from "../firebase";
 import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp, getDoc, addDoc, deleteDoc, limit } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
+import { logKaydet } from "../logKaydet";
 
 const WORKER_URL = process.env.REACT_APP_WORKER_URL;
+
+// Yetki islemlerini loglar (onayli, reddi, rol degisikligi). Islemi yapanin kimligi token'dan gelir.
+async function yetkiLog(islem, detay) {
+  try {
+    const token = await auth.currentUser.getIdToken();
+    await logKaydet(token, { uid: auth.currentUser.uid, islem, detay });
+  } catch (e) {
+    console.error("Yetki logu yazilamadi:", e);
+  }
+}
 
 const MedyaGoster = ({ url }) => {
   if (!url) return null;
@@ -289,6 +300,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
     await updateDoc(doc(db, "posts", gonderiId), {
       adminSildi: true, adminSildiTarihi: serverTimestamp(), adminSildiUid: auth.currentUser.uid
     });
+    yetkiLog("post_kaldir", "post:" + gonderiId);
     setGonderiler(prev => prev.map(g => g.id === gonderiId ? { ...g, adminSildi: true } : g));
   };
 
@@ -309,6 +321,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
     await updateDoc(doc(db, "posts", postId, "comments", yorumId), {
       silindi: true, silinmeTarihi: serverTimestamp(), silenUid: auth.currentUser.uid, silenRol: "admin"
     });
+    yetkiLog("yorum_kaldir", "post:" + postId + " yorum:" + yorumId);
     setYorumlar(prev => ({
       ...prev,
       [postId]: prev[postId].map(y => y.id === yorumId ? { ...y, silindi: true, silenRol: "admin" } : y)
@@ -337,8 +350,16 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
     }
   };
 
+  // Onaylanan kullanicinin kimligini log detayina yazar
+  const onayDetay = (kullaniciId, rol) => {
+    const k = kullaniciler[kullaniciId];
+    const isim = k?.isim || k?.email || kullaniciId;
+    return "onaylanan: " + isim + " (" + kullaniciId + ") -> rol: " + rol;
+  };
+
   const kullaniciOnayla = async (kullaniciId) => {
     await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true });
+    yetkiLog("onay_ogrenci", onayDetay(kullaniciId, "student"));
     setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
     setKullaniciler(prev => ({ ...prev, [kullaniciId]: { ...prev[kullaniciId], onaylandi: true } }));
     alert("Kullanici onaylandi!");
@@ -347,6 +368,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
   const ogretmenOlarakOnayla = async (kullaniciId) => {
     if (!window.confirm("Ogretmen olarak onaylamak istediginizden emin misiniz?")) return;
     await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true, role: "teacher" });
+    yetkiLog("onay_ogretmen", onayDetay(kullaniciId, "teacher"));
     setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
     setKullaniciler(prev => ({ ...prev, [kullaniciId]: { ...prev[kullaniciId], onaylandi: true, role: "teacher" } }));
     alert("Ogretmen olarak onaylandi!");
@@ -355,6 +377,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
   const veliOlarakOnayla = async (kullaniciId) => {
     if (!window.confirm("Veli olarak onaylamak istediginizden emin misiniz?")) return;
     await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true, role: "parent" });
+    yetkiLog("onay_veli", onayDetay(kullaniciId, "parent"));
     setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
     setKullaniciler(prev => ({ ...prev, [kullaniciId]: { ...prev[kullaniciId], onaylandi: true, role: "parent" } }));
     alert("Veli olarak onaylandi!");
@@ -363,6 +386,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
   const adminOlarakOnayla = async (kullaniciId) => {
     if (!window.confirm("Admin olarak onaylamak istediginizden emin misiniz?")) return;
     await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true, role: "admin" });
+    yetkiLog("onay_admin", onayDetay(kullaniciId, "admin"));
     setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
     setKullaniciler(prev => ({ ...prev, [kullaniciId]: { ...prev[kullaniciId], onaylandi: true, role: "admin" } }));
     alert("Admin olarak onaylandi!");
@@ -371,6 +395,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
   const yoneticiOlarakOnayla = async (kullaniciId) => {
     if (!window.confirm("Yonetici (okul muduru) olarak onaylamak istediginizden emin misiniz?")) return;
     await updateDoc(doc(db, "users", kullaniciId), { onaylandi: true, role: "yonetici" });
+    yetkiLog("onay_yonetici", onayDetay(kullaniciId, "yonetici"));
     setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
     setKullaniciler(prev => ({ ...prev, [kullaniciId]: { ...prev[kullaniciId], onaylandi: true, role: "yonetici" } }));
     alert("Yonetici olarak onaylandi!");
@@ -379,6 +404,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
   const kullaniciReddet = async (kullaniciId) => {
     if (!window.confirm("Bu kayit talebini reddetmek istediginizden emin misiniz?")) return;
     await updateDoc(doc(db, "users", kullaniciId), { reddedildi: true, reddedildiTarihi: serverTimestamp() });
+    yetkiLog("red", onayDetay(kullaniciId, "reddedildi"));
     setBekleyenler(prev => prev.filter(k => k.id !== kullaniciId));
     alert("Kayit reddedildi!");
   };
@@ -396,7 +422,9 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
   const rolDegistir = async (yeniRol) => {
     if (!secilenKullanici) return;
     if (!window.confirm(secilenKullanici.isim + " kullanicisinin rolunu " + yeniRol + " yapmak istediginizden emin misiniz?")) return;
+    const eskiRol = secilenKullanici.role;
     await updateDoc(doc(db, "users", secilenKullanici.id), { role: yeniRol });
+    yetkiLog("rol_degistir", (secilenKullanici.isim || secilenKullanici.email || secilenKullanici.id) + " (" + secilenKullanici.id + "): " + eskiRol + " -> " + yeniRol);
     const guncellenmis = { ...secilenKullanici, role: yeniRol };
     setSecilenKullanici(guncellenmis);
     setKullaniciler(prev => ({ ...prev, [secilenKullanici.id]: guncellenmis }));
@@ -420,6 +448,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
     for (const uid of secilenOgrenciler) {
       await updateDoc(doc(db, "users", uid), { ogretmenUid: secilenKullanici.id, ogretmenIsim: secilenKullanici.isim });
     }
+    yetkiLog("sinif_atama", (secilenKullanici.isim || secilenKullanici.id) + " ogretmenine " + secilenOgrenciler.length + " ogrenci atandi");
     const guncellenmis = { ...secilenKullanici, sinif: secilenOgrenciler };
     setSecilenKullanici(guncellenmis);
     setKullaniciler(prev => ({ ...prev, [secilenKullanici.id]: guncellenmis }));
@@ -431,6 +460,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
     if (!secilenKullanici || !secilenCocuk) return;
     setKaydetYukleniyor(true);
     await updateDoc(doc(db, "users", secilenKullanici.id), { cocuklar: [secilenCocuk] });
+    yetkiLog("cocuk_atama", "veli " + (secilenKullanici.isim || secilenKullanici.id) + " -> cocuk: " + secilenCocuk);
     const guncellenmis = { ...secilenKullanici, cocuklar: [secilenCocuk] };
     setSecilenKullanici(guncellenmis);
     setKullaniciler(prev => ({ ...prev, [secilenKullanici.id]: guncellenmis }));
@@ -803,7 +833,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
       ) : aktifSekme === "loglar" ? (
         <div>
           <div style={{ marginBottom: "12px" }}>
-            <input type="text" placeholder="🔍 UID, islem (kayit/giris), IP veya email ara..." value={logArama} onChange={e => setLogArama(e.target.value)}
+            <input type="text" placeholder="🔍 UID, islem, IP, email veya tarih (gun.ay.yil) ara..." value={logArama} onChange={e => setLogArama(e.target.value)}
               style={{ width: "100%", padding: "10px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "14px", boxSizing: "border-box", background: inputBg, color: yaziRenk }} />
           </div>
           {(() => {
@@ -821,7 +851,12 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
             const islemRenk = (islem) => {
               if (islem === "giris") return { bg: "#dbeafe", text: "#1e40af" };
               if (islem === "kayit") return { bg: "#dcfce7", text: "#166534" };
+              if ((islem || "").startsWith("onay")) return { bg: "#dcfce7", text: "#166534" };
+              if (islem === "red") return { bg: "#fee2e2", text: "#991b1b" };
+              if (islem === "rol_degistir") return { bg: "#ede9fe", text: "#5b21b6" };
               if (islem === "kod_uret") return { bg: "#fef3c7", text: "#92400e" };
+              if ((islem || "").includes("kaldir")) return { bg: "#fee2e2", text: "#991b1b" };
+              if ((islem || "").includes("atama")) return { bg: "#cffafe", text: "#155e75" };
               return { bg: "#f3f4f6", text: "#374151" };
             };
             if (loglar.length === 0) return <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}><p>Henuz log kaydi yok.</p></div>;
@@ -839,7 +874,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
                         <span style={{ fontSize: "12px", color: ikincilYazi }}>🕐 {zamanStr}</span>
                       </div>
                       {l.detay && <p style={{ margin: "0 0 4px", fontSize: "13px", color: yaziRenk }}>📝 {l.detay}</p>}
-                      <p style={{ margin: "0 0 2px", fontSize: "12px", color: ikincilYazi, wordBreak: "break-all" }}>👤 UID: {l.uid}</p>
+                      <p style={{ margin: "0 0 2px", fontSize: "12px", color: ikincilYazi, wordBreak: "break-all" }}>👤 Islemi yapan UID: {l.uid}</p>
                       <p style={{ margin: "0", fontSize: "12px", color: ikincilYazi }}>🌐 IP: {l.ip}</p>
                     </div>
                   );
