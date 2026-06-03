@@ -5,6 +5,7 @@ import { skoruPaylas } from "./skorPaylas";
 import SekSekMatematik from "./SekSekMatematik";
 import Sudoku from "./Sudoku";
 import IslemOyunu from "./IslemOyunu";
+import SifreOyunu from "./SifreOyunu";
 
 function SoruSayfasi({ sayfa, soruNo, onCevap }) {
   const [secilen, setSecilen] = useState(null);
@@ -258,6 +259,9 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
     if (ekran === "islem") {
       return <IslemOyunu onKapat={() => setEkran("kategoriler")} />;
     }
+    if (ekran === "sifre") {
+      return <SifreOyunu onKapat={() => setEkran("kategoriler")} />;
+    }
 
     // EKRAN 1: Oyun Kategorileri
     if (ekran === "kategoriler") {
@@ -266,7 +270,8 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
         { id: "matematik", ad: "Sek Sek Matematik", ikon: "🦘", renk: "#10b981", aktif: true, aciklama: "Engelleri geç, işlemleri çöz" },
         { id: "bilim", ad: "Bil Bakalım Ben Bilim", ikon: "🔬", renk: "#3b82f6", aktif: false, aciklama: "Fen ve doğa soruları" },
         { id: "sudoku", ad: "Sudoku", ikon: "🔢", renk: "#f59e0b", aktif: true, aciklama: "Sayıları yerleştir" },
-        { id: "islem", ad: "İşlem Ustası", ikon: "➕", renk: "#10b981", aktif: true, aciklama: "Toplama ve çıkarma" }
+        { id: "islem", ad: "İşlem Ustası", ikon: "➕", renk: "#10b981", aktif: true, aciklama: "Toplama ve çıkarma" },
+        { id: "sifre", ad: "Sifreli Islem", ikon: "🔐", renk: "#7c3aed", aktif: true, aciklama: "Sezar sifresi coz, harfi bul, kelimeyi tamamla" }
       ];
       return (
         <div ref={oyunRef} style={{ position:"fixed", top:0, left:0, width:"100%", height:"100%", background:"#0f0f1a", zIndex:500, display:"flex", flexDirection:"column" }}>
@@ -276,7 +281,7 @@ function HikayeOyunu({ onKapat, karanlikMod }) {
           </div>
           <div style={{ flex:1, overflowY:"auto", padding:"20px" }}>
             {oyunlar.map(o => (
-              <div key={o.id} onClick={() => { if (o.aktif) setEkran(o.id === "matematik" ? "matematik" : o.id === "sudoku" ? "sudoku" : o.id === "islem" ? "islem" : "siniflar"); }}
+              <div key={o.id} onClick={() => { if (o.aktif) setEkran(o.id === "matematik" ? "matematik" : o.id === "sudoku" ? "sudoku" : o.id === "islem" ? "islem" : o.id === "sifre" ? "sifre" : "siniflar"); }}
                 style={{ background:"#1a1a2e", borderRadius:"16px", padding:"20px", marginBottom:"14px", cursor: o.aktif ? "pointer" : "default", border:`1px solid ${o.aktif ? o.renk : "#2a2a3e"}`, opacity: o.aktif ? 1 : 0.55, display:"flex", alignItems:"center", gap:"16px", position:"relative" }}>
                 <div style={{ fontSize:"36px" }}>{o.ikon}</div>
                 <div style={{ flex:1 }}>
