@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { db, auth } from "../firebase";
-import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp, getDoc, addDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, orderBy, query, updateDoc, serverTimestamp, getDoc, addDoc, deleteDoc, limit } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 
@@ -45,6 +45,9 @@ function SuperAdminDashboard() {
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("adminKaranlikMod") === "true");
   const [postDetay, setPostDetay] = useState({});
   const [acikBildirimPost, setAcikBildirimPost] = useState({});
+  const [loglar, setLoglar] = useState([]);
+  const [logArama, setLogArama] = useState("");
+  const [loglarYuklendi, setLoglarYuklendi] = useState(false);
 
   // AI Asistan state
   const [mesajlar, setMesajlar] = useState([]);
@@ -268,6 +271,17 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
     if (mesajlar.length > 0 && !window.confirm("Sohbeti temizlemek istediginizden emin misiniz?")) return;
     setMesajlar([]);
     setBekleyenHikaye(null);
+  };
+
+  const loglariGetir = async () => {
+    try {
+      const q = query(collection(db, "loglar"), orderBy("zamanMs", "desc"), limit(200));
+      const snapshot = await getDocs(q);
+      setLoglar(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoglarYuklendi(true);
+    } catch (e) {
+      console.error("Loglar getirilemedi:", e);
+    }
   };
 
   const handleSil = async (gonderiId) => {
@@ -617,9 +631,10 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
           ["etkilesimler", "💬 Paylasimlar", 0],
           ["bildirimler", "🚩 Bildirimler", yeniBildirimSayisi],
           ["bekleyenler", "⏳ Onaylar", bekleyenler.length],
-          ["asistan", "🤖 Asistan", 0]
+          ["asistan", "🤖 Asistan", 0],
+          ["loglar", "📋 Loglar", 0]
         ].map(([key, label, badge]) => (
-          <button key={key} onClick={() => setAktifSekme(key)}
+          <button key={key} onClick={() => { setAktifSekme(key); if (key === "loglar" && !loglarYuklendi) loglariGetir(); }}
             style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === key ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === key ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px", position: "relative" }}>
             {label}
             {badge > 0 && (
@@ -784,6 +799,54 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
               })
             )}
           </div>
+        </div>
+      ) : aktifSekme === "loglar" ? (
+        <div>
+          <div style={{ marginBottom: "12px" }}>
+            <input type="text" placeholder="🔍 UID, islem (kayit/giris), IP veya email ara..." value={logArama} onChange={e => setLogArama(e.target.value)}
+              style={{ width: "100%", padding: "10px", borderRadius: "8px", border: `1px solid ${borderRenk}`, fontSize: "14px", boxSizing: "border-box", background: inputBg, color: yaziRenk }} />
+          </div>
+          {(() => {
+            const filtreli = logArama.trim()
+              ? loglar.filter(l => {
+                  const ara = logArama.toLowerCase();
+                  const tarihStr = l.zaman ? new Date(l.zaman).toLocaleString("tr-TR").toLowerCase() : "";
+                  return (l.uid || "").toLowerCase().includes(ara) ||
+                    (l.islem || "").toLowerCase().includes(ara) ||
+                    (l.ip || "").toLowerCase().includes(ara) ||
+                    (l.detay || "").toLowerCase().includes(ara) ||
+                    tarihStr.includes(ara);
+                })
+              : loglar;
+            const islemRenk = (islem) => {
+              if (islem === "giris") return { bg: "#dbeafe", text: "#1e40af" };
+              if (islem === "kayit") return { bg: "#dcfce7", text: "#166534" };
+              if (islem === "kod_uret") return { bg: "#fef3c7", text: "#92400e" };
+              return { bg: "#f3f4f6", text: "#374151" };
+            };
+            if (loglar.length === 0) return <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}><p>Henuz log kaydi yok.</p></div>;
+            if (filtreli.length === 0) return <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}><p>Aramayla eslesen log yok.</p></div>;
+            return (
+              <>
+                <h3 style={{ color: ikincilYazi, marginBottom: "12px" }}>Son Loglar ({filtreli.length}{loglar.length >= 200 ? " / son 200" : ""})</h3>
+                {filtreli.map(l => {
+                  const r = islemRenk(l.islem);
+                  const zamanStr = l.zaman ? new Date(l.zaman).toLocaleString("tr-TR") : "—";
+                  return (
+                    <div key={l.id} style={{ background: kartBg, padding: "12px 14px", borderRadius: "10px", marginBottom: "8px", boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", flexWrap: "wrap", gap: "6px" }}>
+                        <span style={{ background: r.bg, color: r.text, padding: "3px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>{l.islem}</span>
+                        <span style={{ fontSize: "12px", color: ikincilYazi }}>🕐 {zamanStr}</span>
+                      </div>
+                      {l.detay && <p style={{ margin: "0 0 4px", fontSize: "13px", color: yaziRenk }}>📝 {l.detay}</p>}
+                      <p style={{ margin: "0 0 2px", fontSize: "12px", color: ikincilYazi, wordBreak: "break-all" }}>👤 UID: {l.uid}</p>
+                      <p style={{ margin: "0", fontSize: "12px", color: ikincilYazi }}>🌐 IP: {l.ip}</p>
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
         </div>
       ) : aktifSekme === "bekleyenler" ? (
         <div>
