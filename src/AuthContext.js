@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
           }
 
           // Onaylanma kontrolu (sadece student rolu icin)
-          if (data.role === "student" && data.onaylandi === false) {
+          if ((data.role === "student" || data.role === "teacher" || data.role === "parent" || data.role === "admin" || data.role === "yonetici") && data.onaylandi === false) {
             onaylanmadiRef.current = true;
             setOnayMesaj("Hesabiniz henuz onaylanmadi. Admin onayini bekleyiniz.");
             setCurrentUser(null);

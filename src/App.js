@@ -7,6 +7,8 @@ import { doc, setDoc } from "firebase/firestore";
 import StudentDashboard from "./pages/StudentDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import YoneticiDashboard from "./pages/YoneticiDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 
 function LoginForm({ tip, onKapat }) {
@@ -178,7 +180,9 @@ function AppContent() {
   const [aktifForm, setAktifForm] = useState(null);
 
   if (currentUser) {
+    if (userRole === "superadmin") return <SuperAdminDashboard />;
     if (userRole === "admin") return <AdminDashboard />;
+    if (userRole === "yonetici") return <YoneticiDashboard />;
     if (userRole === "teacher") return <TeacherDashboard />;
     if (userRole === "parent") return <ParentDashboard />;
     if (userRole === "student") return <StudentDashboard />;
