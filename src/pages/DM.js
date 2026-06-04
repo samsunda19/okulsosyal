@@ -22,7 +22,7 @@ function konusmaId(uid1, uid2) {
   return [uid1, uid2].sort().join("_");
 }
 
-function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
+function DM({ kullaniciIsim, arkadaslar, karanlikMod, dmIzni }) {
   const [acik, setAcik] = useState(false);
   const [aktifKonusma, setAktifKonusma] = useState(null);
   const [arkadasBilgileri, setArkadasBilgileri] = useState([]);
@@ -64,6 +64,7 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
   };
 
   const okunmamisSayilariGetir = async () => {
+    if (dmIzni === "kapali") { setOkunmamisToplam(0); setOkunmamisHaritasi({}); return; }
     if (!arkadaslar || arkadaslar.length === 0) return;
     if (!auth.currentUser) return;
     let toplam = 0;
@@ -110,6 +111,10 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
 
   const mesajGonder = async () => {
     if (!yeniMesaj.trim() || !aktifKonusma) return;
+    if (dmIzni === "kapali") {
+      alert("⚠️ Velin mesajlasmayi kapatmis. Mesaj gonderemezsin.");
+      return;
+    }
     if (kufurKontrol(yeniMesaj)) {
       alert("⚠️ Mesajda uygunsuz kelimeler tespit edildi!");
       return;
@@ -228,7 +233,13 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod }) {
           </div>
 
           <div style={{ flex:1, overflowY:"auto", padding:"12px" }}>
-            {!aktifKonusma ? (
+            {dmIzni === "kapali" ? (
+              <div style={{ textAlign:"center", color: ikincilYazi, fontSize:"13px", marginTop:"40px", padding:"0 16px" }}>
+                <div style={{ fontSize:"36px", marginBottom:"12px" }}>🔒</div>
+                <p>Velin mesajlasma ozelligini kapatmis.</p>
+                <p style={{ fontSize:"12px" }}>Mesajlasmak icin velinle konusabilirsin.</p>
+              </div>
+            ) : !aktifKonusma ? (
               arkadasBilgileri.length === 0 ? (
                 <p style={{ textAlign:"center", color: ikincilYazi, fontSize:"13px", marginTop:"20px" }}>
                   Henuz arkadasin yok. Arkadas ekleyince burada gozukur.

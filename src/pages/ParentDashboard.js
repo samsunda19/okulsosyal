@@ -3,6 +3,7 @@ import { db, auth } from "../firebase";
 import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
+import { logKaydet } from "../logKaydet";
 
 const MedyaGoster = ({ url }) => {
   if (!url) return null;
@@ -38,14 +39,12 @@ function ParentDashboard() {
   const [ogretmenIsim, setOgretmenIsim] = useState("");
   const [ogretmenUid, setOgretmenUid] = useState(null);
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("parentKaranlikMod") === "true");
+  const [ayarKaydet, setAyarKaydet] = useState(null);
 
   const bg = karanlikMod ? "#111827" : "#f9fafb";
-  // eslint-disable-next-line no-unused-vars
   const kartBg = karanlikMod ? "#1f2937" : "white";
-  // eslint-disable-next-line no-unused-vars
   const yaziRenk = karanlikMod ? "#f3f4f6" : "#111827";
   const ikincilYazi = karanlikMod ? "#9ca3af" : "#6b7280";
-  // eslint-disable-next-line no-unused-vars
   const borderRenk = karanlikMod ? "#374151" : "#e5e7eb";
 
   useEffect(() => {
@@ -115,6 +114,28 @@ function ParentDashboard() {
     );
     setBildirimler(ilgiliReports);
     setYukleniyor(false);
+  };
+
+  // ===== AYAR DEGISTIRME (DM / Akis izni) =====
+  // izinTipi: "dmIzni" veya "akisIzni" | deger: "arkadas" / "okul" / "kapali"
+  const izinDegistir = async (cocukUid, izinTipi, deger) => {
+    setAyarKaydet(cocukUid + izinTipi);
+    try {
+      await updateDoc(doc(db, "users", cocukUid), { [izinTipi]: deger });
+      setCocukBilgileri(prev => ({ ...prev, [cocukUid]: { ...prev[cocukUid], [izinTipi]: deger } }));
+      // Log: hangi veli, hangi cocugun hangi iznini ne yapti
+      const token = await auth.currentUser.getIdToken();
+      const cocukAd = cocukBilgileri[cocukUid]?.isim || cocukUid;
+      const tip = izinTipi === "dmIzni" ? "DM" : "Akis";
+      logKaydet(token, {
+        uid: auth.currentUser.uid,
+        islem: "ayar_degisti",
+        detay: "veli " + veliIsmi + " -> cocuk " + cocukAd + " " + tip + " izni: " + deger
+      });
+    } catch (e) {
+      alert("Ayar kaydedilemedi: " + e.message);
+    }
+    setAyarKaydet(null);
   };
 
   const handleSil = async (gonderiId, yazarUid) => {
@@ -201,6 +222,13 @@ function ParentDashboard() {
   const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.veliGordu).length;
   const yeniBildirimSayisi = bildirimler.filter(b => !b.veliGordu).length;
 
+  // Izin secenekleri
+  const IZIN_SECENEKLERI = [
+    { deger: "arkadas", label: "👫 Sadece arkadaslari", aciklama: "Sadece arkadas oldugu kisilerle" },
+    { deger: "okul", label: "🏫 Kendi okulundan", aciklama: "Ayni okuldaki ogrencilerle" },
+    { deger: "kapali", label: "🚫 Kapali", aciklama: "Hic kimseyle" }
+  ];
+
   return (
     <div style={{ minHeight: "100vh", background: bg, transition: "background 0.2s" }}>
     <div style={{ maxWidth: "650px", margin: "0 auto", padding: "20px", fontFamily: "sans-serif" }}>
@@ -212,7 +240,7 @@ function ParentDashboard() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
           <h2 style={{ color: "#4f46e5", margin: "0 0 4px" }}>Veli Paneli</h2>
-          <p style={{ margin: 0, fontSize: "13px", color: "#6b7280" }}>👤 {veliIsmi}</p>
+          <p style={{ margin: 0, fontSize: "13px", color: ikincilYazi }}>👤 {veliIsmi}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -232,11 +260,11 @@ function ParentDashboard() {
 
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
         <button onClick={() => setAktifSekme("etkilesimler")}
-          style={{ flex: 1, padding: "10px", background: aktifSekme === "etkilesimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "etkilesimler" ? "white" : "#374151", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
+          style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "etkilesimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "etkilesimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
           💬 Etkilesimler
         </button>
         <button onClick={() => setAktifSekme("bildirimler")}
-          style={{ flex: 1, padding: "10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "bildirimler" ? "white" : "#374151", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
+          style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "bildirimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px", position: "relative" }}>
           🚩 Bildirimler
           {yeniBildirimSayisi > 0 && (
             <span style={{ position: "absolute", top: "-6px", right: "-6px", background: acilBildirimSayisi > 0 ? "#ef4444" : "#f59e0b", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
@@ -246,13 +274,88 @@ function ParentDashboard() {
         </button>
         {ogretmenUid && (
           <button onClick={() => setAktifSekme("ogretmen")}
-            style={{ flex: 1, padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : "#e5e7eb", color: aktifSekme === "ogretmen" ? "white" : "#374151", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
+            style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ogretmen" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
             🏫 Ogretmen
           </button>
         )}
+        <button onClick={() => setAktifSekme("ayarlar")}
+          style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "ayarlar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ayarlar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
+          ⚙️ Ayarlar
+        </button>
       </div>
 
-      {yukleniyor ? <p>Yukleniyor...</p> : aktifSekme === "ogretmen" ? (
+      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "ayarlar" ? (
+        <div>
+          <div style={{ background: karanlikMod ? "#1e3a5f" : "#eff6ff", padding: "12px 14px", borderRadius: "10px", marginBottom: "16px" }}>
+            <p style={{ margin: 0, fontSize: "13px", color: karanlikMod ? "#bfdbfe" : "#1e40af", lineHeight: 1.5 }}>
+              ℹ️ Cocugunuzun kimlerle mesajlasabilecegini ve kimlerin paylasimlarini gorebilecegini buradan ayarlayabilirsiniz. Bu ayarlari yalnizca siz degistirebilirsiniz.
+            </p>
+          </div>
+
+          {cocuklar.length === 0 ? (
+            <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}>
+              <p>Henuz tanimli cocugunuz yok.</p>
+            </div>
+          ) : (
+            cocuklar.map(uid => {
+              const cocuk = cocukBilgileri[uid];
+              if (!cocuk) return null;
+              const dmIzni = cocuk.dmIzni || "okul";
+              const akisIzni = cocuk.akisIzni || "okul";
+              return (
+                <div key={uid} style={{ background: kartBg, padding: "18px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
+                  <p style={{ margin: "0 0 14px", fontSize: "16px", fontWeight: "700", color: yaziRenk }}>👶 {cocuk.isim || "Cocuk"}</p>
+
+                  {/* DM Ayari */}
+                  <div style={{ marginBottom: "18px" }}>
+                    <p style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: "600", color: yaziRenk }}>📨 Mesajlasma (DM)</p>
+                    <p style={{ margin: "0 0 10px", fontSize: "12px", color: ikincilYazi }}>Cocugunuza kimler mesaj atabilir?</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {IZIN_SECENEKLERI.map(s => {
+                        const secili = dmIzni === s.deger;
+                        const kaydediliyor = ayarKaydet === uid + "dmIzni";
+                        return (
+                          <div key={s.deger} onClick={() => !kaydediliyor && izinDegistir(uid, "dmIzni", s.deger)}
+                            style={{ padding: "10px 12px", borderRadius: "8px", cursor: kaydediliyor ? "default" : "pointer", background: secili ? (karanlikMod ? "#312e81" : "#e0e7ff") : (karanlikMod ? "#374151" : "#f9fafb"), border: secili ? "2px solid #4f46e5" : `1px solid ${borderRenk}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secili ? "#4f46e5" : yaziRenk }}>{s.label}</p>
+                              <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>{s.aciklama}</p>
+                            </div>
+                            {secili && <span style={{ color: "#4f46e5", fontWeight: "700", fontSize: "16px" }}>✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Akis Ayari */}
+                  <div>
+                    <p style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: "600", color: yaziRenk }}>📰 Akis (Paylasimlar)</p>
+                    <p style={{ margin: "0 0 10px", fontSize: "12px", color: ikincilYazi }}>Cocugunuz kimlerin paylasimlarini gorsun?</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {IZIN_SECENEKLERI.map(s => {
+                        const secili = akisIzni === s.deger;
+                        const kaydediliyor = ayarKaydet === uid + "akisIzni";
+                        const akisLabel = s.deger === "kapali" ? "🚫 Kapali (sadece kendi paylasimlari)" : s.label;
+                        return (
+                          <div key={s.deger} onClick={() => !kaydediliyor && izinDegistir(uid, "akisIzni", s.deger)}
+                            style={{ padding: "10px 12px", borderRadius: "8px", cursor: kaydediliyor ? "default" : "pointer", background: secili ? (karanlikMod ? "#312e81" : "#e0e7ff") : (karanlikMod ? "#374151" : "#f9fafb"), border: secili ? "2px solid #4f46e5" : `1px solid ${borderRenk}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", color: secili ? "#4f46e5" : yaziRenk }}>{akisLabel}</p>
+                              <p style={{ margin: 0, fontSize: "11px", color: ikincilYazi }}>{s.aciklama}</p>
+                            </div>
+                            {secili && <span style={{ color: "#4f46e5", fontWeight: "700", fontSize: "16px" }}>✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : aktifSekme === "ogretmen" ? (
         <div>
           {ogretmenIsim && (
             <div style={{ background: "#e0e7ff", padding: "10px 14px", borderRadius: "10px", marginBottom: "12px" }}>

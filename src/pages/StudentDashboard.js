@@ -307,7 +307,7 @@ function StudentDashboard() {
   const [dahaFazla, setDahaFazla] = useState(false);
   const [dahaFazlaYukleniyor, setDahaFazlaYukleniyor] = useState(false);
   const [yukleniyor, setYukleniyor] = useState(false);
-  const [kullanici, setKullanici] = useState({ isim: "", arkadaslar: [], gelenIstekler: [], gidenIstekler: [], engellenenler: [], okul: "", ogretmenUid: null, ogretmenIsim: "" });
+  const [kullanici, setKullanici] = useState({ isim: "", arkadaslar: [], gelenIstekler: [], gidenIstekler: [], engellenenler: [], okul: "", ogretmenUid: null, ogretmenIsim: "", akisIzni: "okul", dmIzni: "okul" });
   const [karanlikMod, setKaranlikMod] = useState(false);
   const [arkaplanId, setArkaplanId] = useState("varsayilan");
   const [secilenProfil, setSecilenProfil] = useState(null);
@@ -377,7 +377,9 @@ function StudentDashboard() {
         engellenenler: data.engellenenler || [],
         okul: data.okul || "",
         ogretmenUid: ogretmenUid,
-        ogretmenIsim: data.ogretmenIsim || ""
+        ogretmenIsim: data.ogretmenIsim || "",
+        akisIzni: data.akisIzni || "okul",
+        dmIzni: data.dmIzni || "okul"
       });
       setKaranlikMod(data.karanlikMod || false);
       setArkaplanId(data.arkaplan || "varsayilan");
@@ -665,9 +667,39 @@ function StudentDashboard() {
       })
     : [];
 
-  const filtrelenmisGonderiler = aktifSekme === "arkadaslar"
-    ? gonderiler.filter(g => kullanici.arkadaslar.includes(g.yazarUid))
-    : gonderiler.filter(g => !kullanici.engellenenler.includes(g.yazarUid));
+  // Veli izni "tavan": akisIzni cocugun en fazla neyi gorebilecegini belirler.
+  // Ogrencinin sekme secimi bu tavanin icinde calisir.
+  const okulHaritasi = {};
+  tumOgrenciler.forEach(o => { okulHaritasi[o.id] = o.okul || ""; });
+  const benimOkul = normalize(kullanici.okul);
+  const ayniOkulMu = (uid) => {
+    if (uid === auth.currentUser.uid) return true;
+    return benimOkul && normalize(okulHaritasi[uid]) === benimOkul;
+  };
+
+  const filtrelenmisGonderiler = (() => {
+    // Once engellenenleri her durumda cikar
+    let liste = gonderiler.filter(g => !kullanici.engellenenler.includes(g.yazarUid));
+
+    // Veli tavani uygula
+    if (kullanici.akisIzni === "kapali") {
+      // Sadece kendi paylasimlari
+      return liste.filter(g => g.yazarUid === auth.currentUser.uid);
+    }
+    if (kullanici.akisIzni === "arkadas") {
+      // En fazla arkadaslari (+ kendisi)
+      liste = liste.filter(g => g.yazarUid === auth.currentUser.uid || kullanici.arkadaslar.includes(g.yazarUid));
+    } else {
+      // "okul" tavani: ayni okuldakiler
+      liste = liste.filter(g => ayniOkulMu(g.yazarUid));
+    }
+
+    // Ogrencinin sekme secimi (tavanin icinde)
+    if (aktifSekme === "arkadaslar") {
+      return liste.filter(g => kullanici.arkadaslar.includes(g.yazarUid));
+    }
+    return liste;
+  })();
 
   let arkaplanStili = {};
   if (arkaplanId === "ozel") {
@@ -977,7 +1009,7 @@ function StudentDashboard() {
         )}
       </div>
 
-      <DM kullaniciIsim={kullanici.isim} arkadaslar={kullanici.arkadaslar} karanlikMod={karanlikMod} />
+      <DM kullaniciIsim={kullanici.isim} arkadaslar={kullanici.arkadaslar} karanlikMod={karanlikMod} dmIzni={kullanici.dmIzni} />
     </div>
   );
 }
