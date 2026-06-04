@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db, auth } from "../firebase";
-import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp, limit, startAfter } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 import { logKaydet } from "../logKaydet";
+
+const POST_LIMIT = 20;
 
 function konusmaId(uid1, uid2) {
   return [uid1, uid2].sort().join("_");
@@ -45,10 +47,16 @@ function ParentDashboard() {
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("parentKaranlikMod") === "true");
   const [ayarKaydet, setAyarKaydet] = useState(null);
 
+  // Etkilesim sayfalama
+  const [dahaFazlaVar, setDahaFazlaVar] = useState(false);
+  const [dahaFazlaYukleniyor, setDahaFazlaYukleniyor] = useState(false);
+  const sonPostRef = useRef(null);
+  const cocuklarRef = useRef([]);
+
   // Mesajlar sekmesi
-  const [sohbetler, setSohbetler] = useState([]);        // [{cocukUid, cocukIsim, karsiUid, karsiIsim, sonMesaj, konusmaId}]
+  const [sohbetler, setSohbetler] = useState([]);
   const [sohbetlerYuklendi, setSohbetlerYuklendi] = useState(false);
-  const [aktifSohbet, setAktifSohbet] = useState(null);  // secili sohbet objesi
+  const [aktifSohbet, setAktifSohbet] = useState(null);
   const [sohbetMesajlari, setSohbetMesajlari] = useState([]);
   const [mesajYukleniyor, setMesajYukleniyor] = useState(false);
 
@@ -60,13 +68,33 @@ function ParentDashboard() {
 
   useEffect(() => {
     verileriGetir();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Bir post grubunu (max 20) cocuk-ilgili mi diye PARALEL tara
+  const postlariIsle = async (postDocs, cocuklarListesi) => {
+    const isler = postDocs.map(async (d) => {
+      const post = { id: d.id, ...d.data() };
+      if (cocuklarListesi.includes(post.yazarUid)) {
+        return { ...post, cocukYazari: true };
+      }
+      // Cocugun yazari olmadigi postta yorumlari kontrol et
+      const yorumSnap = await getDocs(collection(db, "posts", post.id, "comments"));
+      const cocukYorumu = yorumSnap.docs.some(yd => {
+        const y = yd.data();
+        return !y.silindi && cocuklarListesi.includes(y.yazarUid);
+      });
+      return cocukYorumu ? { ...post, cocukYazari: false } : null;
+    });
+    const sonuc = await Promise.all(isler);
+    return sonuc.filter(Boolean);
+  };
 
   const verileriGetir = async () => {
     const veliDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
     const veliData = veliDoc.data();
     const cocuklarListesi = veliData.cocuklar || [];
     setCocuklar(cocuklarListesi);
+    cocuklarRef.current = cocuklarListesi;
     setVeliIsmi(veliData.isim || auth.currentUser.email);
 
     const cocukBilgi = {};
@@ -96,27 +124,13 @@ function ParentDashboard() {
       setOgretmenGonderiler(ogretmenPostlari);
     }
 
-    const snapshot = await getDocs(collection(db, "posts"));
-    const tumPosts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    const ilgiliPostlar = [];
-    for (const post of tumPosts) {
-      if (cocuklarListesi.includes(post.yazarUid)) {
-        ilgiliPostlar.push({ ...post, cocukYazari: true });
-        continue;
-      }
-      const yorumSnapshot = await getDocs(collection(db, "posts", post.id, "comments"));
-      const yorumlarListesi = yorumSnapshot.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(y => !y.silindi);
-      const cocukYorumu = yorumlarListesi.some(y => cocuklarListesi.includes(y.yazarUid));
-      if (cocukYorumu) {
-        ilgiliPostlar.push({ ...post, cocukYazari: false });
-      }
-    }
-
-    ilgiliPostlar.sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
-    setTumGonderiler(ilgiliPostlar);
+    // Ilk 20 post (sayfalamali)
+    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), limit(POST_LIMIT));
+    const snap = await getDocs(q);
+    const ilgili = await postlariIsle(snap.docs, cocuklarListesi);
+    setTumGonderiler(ilgili);
+    sonPostRef.current = snap.docs[snap.docs.length - 1] || null;
+    setDahaFazlaVar(snap.docs.length === POST_LIMIT);
 
     const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
     const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -127,7 +141,19 @@ function ParentDashboard() {
     setYukleniyor(false);
   };
 
-  // ===== MESAJLAR: cocugun tum sohbetlerini bul =====
+  const dahaFazlaGetir = async () => {
+    if (!sonPostRef.current || dahaFazlaYukleniyor) return;
+    setDahaFazlaYukleniyor(true);
+    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), startAfter(sonPostRef.current), limit(POST_LIMIT));
+    const snap = await getDocs(q);
+    const ilgili = await postlariIsle(snap.docs, cocuklarRef.current);
+    setTumGonderiler(prev => [...prev, ...ilgili]);
+    sonPostRef.current = snap.docs[snap.docs.length - 1] || null;
+    setDahaFazlaVar(snap.docs.length === POST_LIMIT);
+    setDahaFazlaYukleniyor(false);
+  };
+
+  // ===== MESAJLAR =====
   const sohbetleriGetir = async () => {
     setMesajYukleniyor(true);
     const bulunan = [];
@@ -143,7 +169,6 @@ function ParentDashboard() {
           if (snap.docs.length === 0) continue;
           const mesajlar = snap.docs.map(d => ({ id: d.id, ...d.data() }));
           const sonMesaj = mesajlar[mesajlar.length - 1];
-          // Karsi tarafin ismini bul
           const karsiDoc = await getDoc(doc(db, "users", karsiUid));
           const karsiIsim = karsiDoc.exists() ? (karsiDoc.data().isim || "Kullanici") : "Kullanici";
           bulunan.push({
@@ -152,9 +177,7 @@ function ParentDashboard() {
             sonMesajZaman: sonMesaj.tarih?.seconds || 0,
             mesajSayisi: mesajlar.length
           });
-        } catch (e) {
-          // okuma izni yoksa veya sohbet yoksa atla
-        }
+        } catch (e) { /* atla */ }
       }
     }
     bulunan.sort((a, b) => b.sonMesajZaman - a.sonMesajZaman);
@@ -176,10 +199,9 @@ function ParentDashboard() {
     setMesajYukleniyor(false);
   };
 
-  // Veli, SADECE kendi cocugunun gonderdigi mesaji soft-delete edebilir
   const veliMesajSil = async (mesaj) => {
     if (!aktifSohbet) return;
-    if (mesaj.gondericiUid !== aktifSohbet.cocukUid) return; // sadece kendi cocugunun
+    if (mesaj.gondericiUid !== aktifSohbet.cocukUid) return;
     if (!window.confirm("Cocugunuzun bu mesajini kaldirmak istediginizden emin misiniz?")) return;
     try {
       await updateDoc(doc(db, "messages", aktifSohbet.konusmaId, "mesajlar", mesaj.id), { silindi: true });
@@ -195,7 +217,7 @@ function ParentDashboard() {
     }
   };
 
-  // ===== AYAR DEGISTIRME (DM / Akis izni) =====
+  // ===== AYAR =====
   const izinDegistir = async (cocukUid, izinTipi, deger) => {
     setAyarKaydet(cocukUid + izinTipi);
     try {
@@ -640,7 +662,7 @@ function ParentDashboard() {
           </div>
         ) : (
           <div>
-            <h3 style={{ color: "#666", marginBottom: "16px" }}>Cocugunuzun Etkilesimleri ({tumGonderiler.length})</h3>
+            <h3 style={{ color: "#666", marginBottom: "16px" }}>Cocugunuzun Etkilesimleri</h3>
             {tumGonderiler.map(g => {
               const yazarCocuk = cocukBilgileri[g.yazarUid];
               const begenenler = g.begenenler || [];
@@ -702,6 +724,15 @@ function ParentDashboard() {
                 </div>
               );
             })}
+
+            {dahaFazlaVar && (
+              <div style={{ textAlign: "center", marginTop: "8px" }}>
+                <button onClick={dahaFazlaGetir} disabled={dahaFazlaYukleniyor}
+                  style={{ padding: "10px 24px", background: dahaFazlaYukleniyor ? "#9ca3af" : "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: dahaFazlaYukleniyor ? "default" : "pointer", fontSize: "14px", fontWeight: "600" }}>
+                  {dahaFazlaYukleniyor ? "Yukleniyor..." : "Daha fazla goster"}
+                </button>
+              </div>
+            )}
           </div>
         )
       )}
