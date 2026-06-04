@@ -5,6 +5,10 @@ import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 import { logKaydet } from "../logKaydet";
 
+function konusmaId(uid1, uid2) {
+  return [uid1, uid2].sort().join("_");
+}
+
 const MedyaGoster = ({ url }) => {
   if (!url) return null;
   if (url.includes("cloudflarestream.com")) {
@@ -40,6 +44,13 @@ function ParentDashboard() {
   const [ogretmenUid, setOgretmenUid] = useState(null);
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("parentKaranlikMod") === "true");
   const [ayarKaydet, setAyarKaydet] = useState(null);
+
+  // Mesajlar sekmesi
+  const [sohbetler, setSohbetler] = useState([]);        // [{cocukUid, cocukIsim, karsiUid, karsiIsim, sonMesaj, konusmaId}]
+  const [sohbetlerYuklendi, setSohbetlerYuklendi] = useState(false);
+  const [aktifSohbet, setAktifSohbet] = useState(null);  // secili sohbet objesi
+  const [sohbetMesajlari, setSohbetMesajlari] = useState([]);
+  const [mesajYukleniyor, setMesajYukleniyor] = useState(false);
 
   const bg = karanlikMod ? "#111827" : "#f9fafb";
   const kartBg = karanlikMod ? "#1f2937" : "white";
@@ -116,14 +127,80 @@ function ParentDashboard() {
     setYukleniyor(false);
   };
 
+  // ===== MESAJLAR: cocugun tum sohbetlerini bul =====
+  const sohbetleriGetir = async () => {
+    setMesajYukleniyor(true);
+    const bulunan = [];
+    for (const cocukUid of cocuklar) {
+      const cocuk = cocukBilgileri[cocukUid];
+      const cocukIsim = cocuk?.isim || "Cocuk";
+      const arkadaslar = cocuk?.arkadaslar || [];
+      for (const karsiUid of arkadaslar) {
+        const kId = konusmaId(cocukUid, karsiUid);
+        try {
+          const q = query(collection(db, "messages", kId, "mesajlar"), orderBy("tarih", "asc"));
+          const snap = await getDocs(q);
+          if (snap.docs.length === 0) continue;
+          const mesajlar = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const sonMesaj = mesajlar[mesajlar.length - 1];
+          // Karsi tarafin ismini bul
+          const karsiDoc = await getDoc(doc(db, "users", karsiUid));
+          const karsiIsim = karsiDoc.exists() ? (karsiDoc.data().isim || "Kullanici") : "Kullanici";
+          bulunan.push({
+            konusmaId: kId, cocukUid, cocukIsim, karsiUid, karsiIsim,
+            sonMesajMetni: sonMesaj.silindi ? "(silindi)" : sonMesaj.icerik,
+            sonMesajZaman: sonMesaj.tarih?.seconds || 0,
+            mesajSayisi: mesajlar.length
+          });
+        } catch (e) {
+          // okuma izni yoksa veya sohbet yoksa atla
+        }
+      }
+    }
+    bulunan.sort((a, b) => b.sonMesajZaman - a.sonMesajZaman);
+    setSohbetler(bulunan);
+    setSohbetlerYuklendi(true);
+    setMesajYukleniyor(false);
+  };
+
+  const sohbetAc = async (sohbet) => {
+    setAktifSohbet(sohbet);
+    setMesajYukleniyor(true);
+    try {
+      const q = query(collection(db, "messages", sohbet.konusmaId, "mesajlar"), orderBy("tarih", "asc"));
+      const snap = await getDocs(q);
+      setSohbetMesajlari(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      setSohbetMesajlari([]);
+    }
+    setMesajYukleniyor(false);
+  };
+
+  // Veli, SADECE kendi cocugunun gonderdigi mesaji soft-delete edebilir
+  const veliMesajSil = async (mesaj) => {
+    if (!aktifSohbet) return;
+    if (mesaj.gondericiUid !== aktifSohbet.cocukUid) return; // sadece kendi cocugunun
+    if (!window.confirm("Cocugunuzun bu mesajini kaldirmak istediginizden emin misiniz?")) return;
+    try {
+      await updateDoc(doc(db, "messages", aktifSohbet.konusmaId, "mesajlar", mesaj.id), { silindi: true });
+      setSohbetMesajlari(prev => prev.map(m => m.id === mesaj.id ? { ...m, silindi: true } : m));
+      const token = await auth.currentUser.getIdToken();
+      logKaydet(token, {
+        uid: auth.currentUser.uid,
+        islem: "veli_mesaj_kaldir",
+        detay: "veli " + veliIsmi + " -> cocuk " + aktifSohbet.cocukIsim + " mesajini kaldirdi (sohbet: " + aktifSohbet.karsiIsim + ")"
+      });
+    } catch (e) {
+      alert("Mesaj kaldirilamadi: " + e.message);
+    }
+  };
+
   // ===== AYAR DEGISTIRME (DM / Akis izni) =====
-  // izinTipi: "dmIzni" veya "akisIzni" | deger: "arkadas" / "okul" / "kapali"
   const izinDegistir = async (cocukUid, izinTipi, deger) => {
     setAyarKaydet(cocukUid + izinTipi);
     try {
       await updateDoc(doc(db, "users", cocukUid), { [izinTipi]: deger });
       setCocukBilgileri(prev => ({ ...prev, [cocukUid]: { ...prev[cocukUid], [izinTipi]: deger } }));
-      // Log: hangi veli, hangi cocugun hangi iznini ne yapti
       const token = await auth.currentUser.getIdToken();
       const cocukAd = cocukBilgileri[cocukUid]?.isim || cocukUid;
       const tip = izinTipi === "dmIzni" ? "DM" : "Akis";
@@ -222,12 +299,17 @@ function ParentDashboard() {
   const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.veliGordu).length;
   const yeniBildirimSayisi = bildirimler.filter(b => !b.veliGordu).length;
 
-  // Izin secenekleri
   const IZIN_SECENEKLERI = [
     { deger: "arkadas", label: "👫 Sadece arkadaslari", aciklama: "Sadece arkadas oldugu kisilerle" },
     { deger: "okul", label: "🏫 Kendi okulundan", aciklama: "Ayni okuldaki ogrencilerle" },
     { deger: "kapali", label: "🚫 Kapali", aciklama: "Hic kimseyle" }
   ];
+
+  const mesajTarih = (sn) => {
+    if (!sn) return "";
+    const d = new Date(sn * 1000);
+    return d.toLocaleDateString("tr-TR") + " " + d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: bg, transition: "background 0.2s" }}>
@@ -260,11 +342,11 @@ function ParentDashboard() {
 
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" }}>
         <button onClick={() => setAktifSekme("etkilesimler")}
-          style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "etkilesimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "etkilesimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
+          style={{ flex: "1 1 18%", padding: "10px", background: aktifSekme === "etkilesimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "etkilesimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
           💬 Etkilesimler
         </button>
         <button onClick={() => setAktifSekme("bildirimler")}
-          style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "bildirimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px", position: "relative" }}>
+          style={{ flex: "1 1 18%", padding: "10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "bildirimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px", position: "relative" }}>
           🚩 Bildirimler
           {yeniBildirimSayisi > 0 && (
             <span style={{ position: "absolute", top: "-6px", right: "-6px", background: acilBildirimSayisi > 0 ? "#ef4444" : "#f59e0b", color: "white", borderRadius: "50%", width: "22px", height: "22px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700" }}>
@@ -274,17 +356,101 @@ function ParentDashboard() {
         </button>
         {ogretmenUid && (
           <button onClick={() => setAktifSekme("ogretmen")}
-            style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ogretmen" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
+            style={{ flex: "1 1 18%", padding: "10px", background: aktifSekme === "ogretmen" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ogretmen" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
             🏫 Ogretmen
           </button>
         )}
+        <button onClick={() => { setAktifSekme("mesajlar"); setAktifSohbet(null); if (!sohbetlerYuklendi) sohbetleriGetir(); }}
+          style={{ flex: "1 1 18%", padding: "10px", background: aktifSekme === "mesajlar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "mesajlar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
+          ✉️ Mesajlar
+        </button>
         <button onClick={() => setAktifSekme("ayarlar")}
-          style={{ flex: "1 1 22%", padding: "10px", background: aktifSekme === "ayarlar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ayarlar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
+          style={{ flex: "1 1 18%", padding: "10px", background: aktifSekme === "ayarlar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "ayarlar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "12px" }}>
           ⚙️ Ayarlar
         </button>
       </div>
 
-      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "ayarlar" ? (
+      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "mesajlar" ? (
+        <div>
+          <div style={{ background: karanlikMod ? "#1e3a5f" : "#eff6ff", padding: "12px 14px", borderRadius: "10px", marginBottom: "16px" }}>
+            <p style={{ margin: 0, fontSize: "13px", color: karanlikMod ? "#bfdbfe" : "#1e40af", lineHeight: 1.5 }}>
+              ℹ️ Cocugunuzun yazismalarini buradan gorebilirsiniz (salt okunur). Gerekli gordugunuzde yalnizca cocugunuzun gonderdigi mesaji kaldirabilirsiniz. Karsi tarafin mesajlarina dokunamaz, mesaj yazamazsiniz.
+            </p>
+          </div>
+
+          {aktifSohbet ? (
+            <div>
+              <button onClick={() => { setAktifSohbet(null); setSohbetMesajlari([]); }}
+                style={{ marginBottom: "12px", padding: "8px 14px", background: karanlikMod ? "#374151" : "#e5e7eb", color: yaziRenk, border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "13px", fontWeight: "600" }}>
+                ← Sohbetlere don
+              </button>
+              <div style={{ background: kartBg, padding: "14px 16px", borderRadius: "12px", marginBottom: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+                <p style={{ margin: 0, fontSize: "14px", fontWeight: "700", color: yaziRenk }}>
+                  💬 {aktifSohbet.cocukIsim} ↔ {aktifSohbet.karsiIsim}
+                </p>
+              </div>
+              {mesajYukleniyor ? (
+                <p style={{ color: ikincilYazi, textAlign: "center" }}>Yukleniyor...</p>
+              ) : sohbetMesajlari.length === 0 ? (
+                <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}><p>Bu sohbette mesaj yok.</p></div>
+              ) : (
+                <div style={{ background: kartBg, padding: "12px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+                  {sohbetMesajlari.map(m => {
+                    const cocuktan = m.gondericiUid === aktifSohbet.cocukUid;
+                    return (
+                      <div key={m.id} style={{ display: "flex", justifyContent: cocuktan ? "flex-end" : "flex-start", marginBottom: "8px" }}>
+                        <div style={{ maxWidth: "75%" }}>
+                          <div style={{
+                            background: m.silindi ? (karanlikMod ? "#4b5563" : "#e5e7eb") : (cocuktan ? "#4f46e5" : (karanlikMod ? "#374151" : "#f3f4f6")),
+                            color: m.silindi ? ikincilYazi : (cocuktan ? "white" : yaziRenk),
+                            padding: "8px 12px", borderRadius: "12px", wordBreak: "break-word", fontStyle: m.silindi ? "italic" : "normal"
+                          }}>
+                            <p style={{ margin: 0, fontSize: "13px" }}>{m.silindi ? "🗑️ Bu mesaj silindi" : m.icerik}</p>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: cocuktan ? "flex-end" : "flex-start", alignItems: "center", gap: "6px", marginTop: "2px" }}>
+                            <small style={{ fontSize: "10px", color: ikincilYazi }}>
+                              {cocuktan ? aktifSohbet.cocukIsim : aktifSohbet.karsiIsim} · {mesajTarih(m.tarih?.seconds)}
+                            </small>
+                            {cocuktan && !m.silindi && (
+                              <button onClick={() => veliMesajSil(m)}
+                                style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "11px", color: "#ef4444", padding: 0 }}>
+                                🗑️ Kaldir
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : mesajYukleniyor ? (
+            <p style={{ color: ikincilYazi, textAlign: "center" }}>Sohbetler yukleniyor...</p>
+          ) : sohbetler.length === 0 ? (
+            <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", textAlign: "center", color: ikincilYazi }}>
+              <p>Cocugunuzun henuz mesajlasmasi yok.</p>
+            </div>
+          ) : (
+            <div>
+              {sohbetler.map(s => (
+                <div key={s.konusmaId} onClick={() => sohbetAc(s)}
+                  style={{ background: kartBg, padding: "14px 16px", borderRadius: "12px", marginBottom: "8px", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", border: `1px solid ${borderRenk}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                    <p style={{ margin: 0, fontSize: "14px", fontWeight: "700", color: yaziRenk }}>
+                      {s.cocukIsim} <span style={{ color: ikincilYazi, fontWeight: "400" }}>↔</span> {s.karsiIsim}
+                    </p>
+                    <small style={{ fontSize: "10px", color: ikincilYazi }}>{mesajTarih(s.sonMesajZaman)}</small>
+                  </div>
+                  <p style={{ margin: 0, fontSize: "12px", color: ikincilYazi, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.sonMesajMetni} · {s.mesajSayisi} mesaj
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : aktifSekme === "ayarlar" ? (
         <div>
           <div style={{ background: karanlikMod ? "#1e3a5f" : "#eff6ff", padding: "12px 14px", borderRadius: "10px", marginBottom: "16px" }}>
             <p style={{ margin: 0, fontSize: "13px", color: karanlikMod ? "#bfdbfe" : "#1e40af", lineHeight: 1.5 }}>
@@ -306,7 +472,6 @@ function ParentDashboard() {
                 <div key={uid} style={{ background: kartBg, padding: "18px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
                   <p style={{ margin: "0 0 14px", fontSize: "16px", fontWeight: "700", color: yaziRenk }}>👶 {cocuk.isim || "Cocuk"}</p>
 
-                  {/* DM Ayari */}
                   <div style={{ marginBottom: "18px" }}>
                     <p style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: "600", color: yaziRenk }}>📨 Mesajlasma (DM)</p>
                     <p style={{ margin: "0 0 10px", fontSize: "12px", color: ikincilYazi }}>Cocugunuza kimler mesaj atabilir?</p>
@@ -328,7 +493,6 @@ function ParentDashboard() {
                     </div>
                   </div>
 
-                  {/* Akis Ayari */}
                   <div>
                     <p style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: "600", color: yaziRenk }}>📰 Akis (Paylasimlar)</p>
                     <p style={{ margin: "0 0 10px", fontSize: "12px", color: ikincilYazi }}>Cocugunuz kimlerin paylasimlarini gorsun?</p>
