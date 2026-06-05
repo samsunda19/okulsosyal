@@ -30,9 +30,28 @@ const MedyaGoster = ({ url }) => {
       </div>
     );
   }
+  const belgeUzantilari = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt"];
+  const belge = belgeUzantilari.some(u => url.toLowerCase().includes(u)) || url.includes("/belgeler/");
+  if (belge) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "8px", padding: "8px 12px", background: "#e0e7ff", color: "#4f46e5", borderRadius: "8px", fontSize: "13px", fontWeight: "600", textDecoration: "none" }}>
+        📄 Belgeyi Ac
+      </a>
+    );
+  }
   return (
     <img src={url} alt="gonderi" style={{ maxWidth: "100%", borderRadius: "8px", marginTop: "8px", cursor: "pointer" }}
-      onClick={() => window.open(url, "_blank")} />
+      onClick={() => {
+        const overlay = document.createElement("div");
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer";
+        const img = document.createElement("img");
+        img.src = url;
+        img.style.cssText = "max-width:90%;max-height:90vh;border-radius:12px;object-fit:contain";
+        overlay.appendChild(img);
+        overlay.onclick = () => document.body.removeChild(overlay);
+        document.body.appendChild(overlay);
+      }}
+    />
   );
 };
 

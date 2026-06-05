@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { db, auth } from "../firebase";
-import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, arrayUnion, arrayRemove, limit, startAfter } from "firebase/firestore";
+import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, arrayUnion, arrayRemove, where } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 import DM from "./DM";
 import HikayeOyunu from "./HikayeOyunu.js";
 import boslukResmi from "../background2.png";
 
-const GONDERI_LIMIT = 20;
 
 const KUFUR_LISTESI = [
   "amk", "aq", "amq", "amina", "amini", "amcik", "amcik", "anasini",
@@ -302,10 +301,6 @@ const GonderiKarti = React.memo(({
 function StudentDashboard() {
   const [gonderi, setGonderi] = useState("");
   const [gonderiler, setGonderiler] = useState([]);
-  // eslint-disable-next-line no-unused-vars
-  const [sonDoc, setSonDoc] = useState(null);
-  const [dahaFazla, setDahaFazla] = useState(false);
-  const [dahaFazlaYukleniyor, setDahaFazlaYukleniyor] = useState(false);
   const [yukleniyor, setYukleniyor] = useState(false);
   const [kullanici, setKullanici] = useState({ isim: "", arkadaslar: [], gelenIstekler: [], gidenIstekler: [], engellenenler: [], okul: "", ogretmenUid: null, ogretmenIsim: "", akisIzni: "okul", dmIzni: "okul" });
   const [karanlikMod, setKaranlikMod] = useState(false);
@@ -321,7 +316,7 @@ function StudentDashboard() {
   const [digerSebep, setDigerSebep] = useState("");
   const [aramaMetni, setAramaMetni] = useState("");
   const [tumOgrenciler, setTumOgrenciler] = useState([]);
-  const [aktifSekme, setAktifSekme] = useState("tumu");
+  const [aktifSekme, setAktifSekme] = useState("dunyam");
   const [bildirdigim, setBildirdigim] = useState([]);
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [gorulmemisOgretmenPost, setGorulmemisOgretmenPost] = useState(0);
@@ -333,26 +328,12 @@ function StudentDashboard() {
   const [aktifSekmeHover, setAktifSekmeHover] = useState(null);
   const [hikayeOyunuAcik, setHikayeOyunuAcik] = useState(false);
   const arkadaslarRef = useRef([]);
-  const sonDocRef = useRef(null);
-  const dahaFazlaRef = useRef(false);
-  const yukleniyor2Ref = useRef(false);
   const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
 
   useEffect(() => {
     ilkYukle();
     const interval = setInterval(kullaniciBilgisiGetir, 30000);
     return () => clearInterval(interval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (yukleniyor2Ref.current || !dahaFazlaRef.current) return;
-      const scrolled = window.scrollY + window.innerHeight;
-      const total = document.documentElement.scrollHeight;
-      if (scrolled >= total - 300) dahaFazlaGetir();
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ilkYukle = async () => {
@@ -387,35 +368,28 @@ function StudentDashboard() {
     }
   };
 
+  // Arkadaslarin + kendi postlarini ceker (30'arlik gruplar halinde - in sorgusu max 30)
   const ilkGonderileriGetir = async () => {
-    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), limit(GONDERI_LIMIT));
-    const snapshot = await getDocs(q);
-    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
+    const benimUid = auth.currentUser.uid;
+    const arkadaslar = arkadaslarRef.current || [];
+    // Cekilecek yazar listesi: kendim + arkadaslarim
+    const yazarlar = [benimUid, ...arkadaslar];
+    // 30'arlik gruplara bol
+    const gruplar = [];
+    for (let i = 0; i < yazarlar.length; i += 30) {
+      gruplar.push(yazarlar.slice(i, i + 30));
+    }
+    let tumPostlar = [];
+    for (const grup of gruplar) {
+      const q = query(collection(db, "posts"), where("yazarUid", "in", grup));
+      const snapshot = await getDocs(q);
+      tumPostlar = tumPostlar.concat(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }
+    // Silinmis olanlari ele, tarihe gore sirala
+    const liste = tumPostlar
+      .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi)
+      .sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
     setGonderiler(liste);
-    const sonSayfaDoc = snapshot.docs[snapshot.docs.length - 1] || null;
-    sonDocRef.current = sonSayfaDoc;
-    setSonDoc(sonSayfaDoc);
-    const daha = snapshot.docs.length === GONDERI_LIMIT;
-    dahaFazlaRef.current = daha;
-    setDahaFazla(daha);
-  };
-
-  const dahaFazlaGetir = async () => {
-    if (yukleniyor2Ref.current || !sonDocRef.current) return;
-    yukleniyor2Ref.current = true;
-    setDahaFazlaYukleniyor(true);
-    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), startAfter(sonDocRef.current), limit(GONDERI_LIMIT));
-    const snapshot = await getDocs(q);
-    const liste = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi);
-    setGonderiler(prev => [...prev, ...liste]);
-    const sonSayfaDoc = snapshot.docs[snapshot.docs.length - 1] || null;
-    sonDocRef.current = sonSayfaDoc;
-    setSonDoc(sonSayfaDoc);
-    const daha = snapshot.docs.length === GONDERI_LIMIT;
-    dahaFazlaRef.current = daha;
-    setDahaFazla(daha);
-    yukleniyor2Ref.current = false;
-    setDahaFazlaYukleniyor(false);
   };
 
   const gonderileriGetir = async () => { await ilkGonderileriGetir(); };
@@ -481,23 +455,22 @@ function StudentDashboard() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const yorumYap = useCallback(async (postId) => {
-    setYeniYorum(prev => {
-      const metin = prev[postId];
-      if (!metin || !metin.trim()) return prev;
-      if (KUFUR_LISTESI.some(k => metin.toLowerCase().includes(k))) {
-        alert("⚠️ Yorumda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
-        return prev;
-      }
-      addDoc(collection(db, "posts", postId, "comments"), {
-        icerik: metin,
-        yazar: auth.currentUser.displayName || auth.currentUser.email,
-        yazarUid: auth.currentUser.uid,
-        tarih: serverTimestamp(),
-        silindi: false
-      }).then(() => yorumlariGetir(postId));
-      return { ...prev, [postId]: "" };
+    const metin = yeniYorum[postId];
+    if (!metin || !metin.trim()) return;
+    if (KUFUR_LISTESI.some(k => metin.toLowerCase().includes(k))) {
+      alert("⚠️ Yorumda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
+      return;
+    }
+    setYeniYorum(prev => ({ ...prev, [postId]: "" }));
+    await addDoc(collection(db, "posts", postId, "comments"), {
+      icerik: metin,
+      yazar: auth.currentUser.displayName || auth.currentUser.email,
+      yazarUid: auth.currentUser.uid,
+      tarih: serverTimestamp(),
+      silindi: false
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    yorumlariGetir(postId);
+  }, [yeniYorum]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const yorumSil = useCallback(async (postId, yorumId) => {
     await updateDoc(doc(db, "posts", postId, "comments", yorumId), {
@@ -524,6 +497,7 @@ function StudentDashboard() {
   const medyaTemizle = () => { setSecilenMedya(null); setMedyaOnizleme(null); setMedyaTip(null); };
 
   const gonderiYap = async () => {
+    if (yukleniyor || medyaYukleniyor) return; // cift gondermeyi engelle
     if (!gonderi.trim() && !secilenMedya) return;
     if (gonderi.trim() && kufurKontrol(gonderi)) {
       setHataMesaj("⚠️ Paylasimda uygunsuz kelimeler tespit edildi. Lutfen duzenleyin!");
@@ -536,6 +510,7 @@ function StudentDashboard() {
       return;
     }
     setYukleniyor(true);
+    console.log("GONDERI YAP CALISTI", new Date().toISOString());
     let medyaUrl = null;
     if (secilenMedya) {
       try {
@@ -667,38 +642,15 @@ function StudentDashboard() {
       })
     : [];
 
-  // Veli izni "tavan": akisIzni cocugun en fazla neyi gorebilecegini belirler.
-  // Ogrencinin sekme secimi bu tavanin icinde calisir.
-  const okulHaritasi = {};
-  tumOgrenciler.forEach(o => { okulHaritasi[o.id] = o.okul || ""; });
-  const benimOkul = normalize(kullanici.okul);
-  const ayniOkulMu = (uid) => {
-    if (uid === auth.currentUser.uid) return true;
-    return benimOkul && normalize(okulHaritasi[uid]) === benimOkul;
-  };
-
+  // Akis artik sadece arkadas-bazli (Dunyam = arkadaslar + kendim).
+  // Veli "kapali" derse sadece kendi paylasimlari gorunur.
   const filtrelenmisGonderiler = (() => {
-    // Once engellenenleri her durumda cikar
     let liste = gonderiler.filter(g => !kullanici.engellenenler.includes(g.yazarUid));
-
-    // Veli tavani uygula
     if (kullanici.akisIzni === "kapali") {
-      // Sadece kendi paylasimlari
       return liste.filter(g => g.yazarUid === auth.currentUser.uid);
     }
-    if (kullanici.akisIzni === "arkadas") {
-      // En fazla arkadaslari (+ kendisi)
-      liste = liste.filter(g => g.yazarUid === auth.currentUser.uid || kullanici.arkadaslar.includes(g.yazarUid));
-    } else {
-      // "okul" tavani: ayni okuldakiler
-      liste = liste.filter(g => ayniOkulMu(g.yazarUid));
-    }
-
-    // Ogrencinin sekme secimi (tavanin icinde)
-    if (aktifSekme === "arkadaslar") {
-      return liste.filter(g => kullanici.arkadaslar.includes(g.yazarUid));
-    }
-    return liste;
+    // Arkadaslar + kendisi (zaten sorgu da bunu cekiyor, ekstra guvenlik)
+    return liste.filter(g => g.yazarUid === auth.currentUser.uid || kullanici.arkadaslar.includes(g.yazarUid));
   })();
 
   let arkaplanStili = {};
@@ -884,8 +836,7 @@ function StudentDashboard() {
         {/* SEKMELER */}
         <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
           {[
-            { id: "tumu", label: "🌍 Tumu", badge: 0 },
-            { id: "arkadaslar", label: "👥 Arkadaslar", badge: kullanici.gelenIstekler.length },
+            { id: "dunyam", label: "🏠 Dunyam", badge: kullanici.gelenIstekler.length },
             { id: "ogretmen", label: "🏫 Ogretmenim", badge: gorulmemisOgretmenPost }
           ].map(({ id, label, badge }) => (
             <button key={id}
@@ -904,7 +855,7 @@ function StudentDashboard() {
         </div>
 
         {/* ARKADAS İSTEKLERİ */}
-        {aktifSekme === "arkadaslar" && kullanici.gelenIstekler.length > 0 && (
+        {aktifSekme === "dunyam" && kullanici.gelenIstekler.length > 0 && (
           <div style={{ background: kartArkaplan, padding: "12px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
             <h3 style={{ fontSize: "14px", color: kartYazi, margin: "0 0 10px" }}>📬 Bekleyen Istekler ({kullanici.gelenIstekler.length})</h3>
             {kullanici.gelenIstekler.map(uid => {
@@ -993,18 +944,12 @@ function StudentDashboard() {
         {/* ANA AKIS */}
         {aktifSekme !== "ogretmen" && (
           <div>
-            {filtrelenmisGonderiler.length === 0 && aktifSekme === "arkadaslar" && (
+            {filtrelenmisGonderiler.length === 0 && (
               <div style={{ background: kartArkaplan, padding: "20px", borderRadius: "12px", textAlign: "center", color: kartIkincilYazi }}>
-                <p>Henuz arkadasin yok veya arkadaslarin paylasim yapmadi.</p>
+                <p>Henuz paylasim yok. Arkadas ekleyince onlarin paylasimlari burada gozukur.</p>
               </div>
             )}
             {filtrelenmisGonderiler.map(g => <GonderiKarti key={g.id} g={g} listeAdi="normal" {...gonderiKartiProps} />)}
-            {dahaFazlaYukleniyor && (
-              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "13px" }}>Yukleniyor...</div>
-            )}
-            {!dahaFazla && gonderiler.length > 0 && aktifSekme !== "arkadaslar" && (
-              <div style={{ textAlign: "center", padding: "20px", color: kartIkincilYazi, fontSize: "12px" }}>Tum paylasimlar gosterildi</div>
-            )}
           </div>
         )}
       </div>

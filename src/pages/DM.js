@@ -64,9 +64,9 @@ function DM({ kullaniciIsim, arkadaslar, karanlikMod, dmIzni }) {
   };
 
   const okunmamisSayilariGetir = async () => {
+    if (!auth.currentUser) return;
     if (dmIzni === "kapali") { setOkunmamisToplam(0); setOkunmamisHaritasi({}); return; }
     if (!arkadaslar || arkadaslar.length === 0) return;
-    if (!auth.currentUser) return;
     let toplam = 0;
     const harita = {};
     for (const uid of arkadaslar) {

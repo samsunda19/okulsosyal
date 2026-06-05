@@ -1,14 +1,19 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { doc, getDoc, collection, getDocs, orderBy, query, updateDoc, serverTimestamp, limit, startAfter } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, orderBy, query, where, updateDoc, serverTimestamp } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 import { logKaydet } from "../logKaydet";
 
-const POST_LIMIT = 20;
-
 function konusmaId(uid1, uid2) {
   return [uid1, uid2].sort().join("_");
+}
+
+// 30'arlik gruplara bol (Firestore "in" sorgusu max 30)
+function gruplara(liste) {
+  const g = [];
+  for (let i = 0; i < liste.length; i += 30) g.push(liste.slice(i, i + 30));
+  return g;
 }
 
 const MedyaGoster = ({ url }) => {
@@ -29,15 +34,13 @@ const MedyaGoster = ({ url }) => {
 };
 
 function ParentDashboard() {
-  const [tumGonderiler, setTumGonderiler] = useState([]);
+  const [cocukPostlari, setCocukPostlari] = useState([]);
   const [cocuklar, setCocuklar] = useState([]);
   const [cocukBilgileri, setCocukBilgileri] = useState({});
   const [bildirimler, setBildirimler] = useState([]);
   const [veliIsmi, setVeliIsmi] = useState("");
   const [yukleniyor, setYukleniyor] = useState(true);
   const [secilenProfil, setSecilenProfil] = useState(null);
-  const [acikYorumlar, setAcikYorumlar] = useState({});
-  const [yorumlar, setYorumlar] = useState({});
   const [aktifSekme, setAktifSekme] = useState("etkilesimler");
   const [acikIcerik, setAcikIcerik] = useState({});
   const [postDetay, setPostDetay] = useState({});
@@ -46,12 +49,6 @@ function ParentDashboard() {
   const [ogretmenUid, setOgretmenUid] = useState(null);
   const [karanlikMod, setKaranlikMod] = useState(() => localStorage.getItem("parentKaranlikMod") === "true");
   const [ayarKaydet, setAyarKaydet] = useState(null);
-
-  // Etkilesim sayfalama
-  const [dahaFazlaVar, setDahaFazlaVar] = useState(false);
-  const [dahaFazlaYukleniyor, setDahaFazlaYukleniyor] = useState(false);
-  const sonPostRef = useRef(null);
-  const cocuklarRef = useRef([]);
 
   // Mesajlar sekmesi
   const [sohbetler, setSohbetler] = useState([]);
@@ -68,33 +65,13 @@ function ParentDashboard() {
 
   useEffect(() => {
     verileriGetir();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Bir post grubunu (max 20) cocuk-ilgili mi diye PARALEL tara
-  const postlariIsle = async (postDocs, cocuklarListesi) => {
-    const isler = postDocs.map(async (d) => {
-      const post = { id: d.id, ...d.data() };
-      if (cocuklarListesi.includes(post.yazarUid)) {
-        return { ...post, cocukYazari: true };
-      }
-      // Cocugun yazari olmadigi postta yorumlari kontrol et
-      const yorumSnap = await getDocs(collection(db, "posts", post.id, "comments"));
-      const cocukYorumu = yorumSnap.docs.some(yd => {
-        const y = yd.data();
-        return !y.silindi && cocuklarListesi.includes(y.yazarUid);
-      });
-      return cocukYorumu ? { ...post, cocukYazari: false } : null;
-    });
-    const sonuc = await Promise.all(isler);
-    return sonuc.filter(Boolean);
-  };
+  }, []);
 
   const verileriGetir = async () => {
     const veliDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
     const veliData = veliDoc.data();
     const cocuklarListesi = veliData.cocuklar || [];
     setCocuklar(cocuklarListesi);
-    cocuklarRef.current = cocuklarListesi;
     setVeliIsmi(veliData.isim || auth.currentUser.email);
 
     const cocukBilgi = {};
@@ -124,13 +101,19 @@ function ParentDashboard() {
       setOgretmenGonderiler(ogretmenPostlari);
     }
 
-    // Ilk 20 post (sayfalamali)
-    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), limit(POST_LIMIT));
-    const snap = await getDocs(q);
-    const ilgili = await postlariIsle(snap.docs, cocuklarListesi);
-    setTumGonderiler(ilgili);
-    sonPostRef.current = snap.docs[snap.docs.length - 1] || null;
-    setDahaFazlaVar(snap.docs.length === POST_LIMIT);
+    if (cocuklarListesi.length > 0) {
+      // 1) Cocugun KENDI postlari (where in, 30'arlik)
+      let postlar = [];
+      for (const grup of gruplara(cocuklarListesi)) {
+        const snap = await getDocs(query(collection(db, "posts"), where("yazarUid", "in", grup)));
+        postlar = postlar.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
+      postlar = postlar
+        .filter(g => !g.ogrenciSildi && !g.veliKaldirdi && !g.ogretmenKaldirdi && !g.adminSildi)
+        .sort((a, b) => (b.tarih?.seconds || 0) - (a.tarih?.seconds || 0));
+      setCocukPostlari(postlar);
+
+    }
 
     const reportSnapshot = await getDocs(query(collection(db, "reports"), orderBy("tarih", "desc")));
     const tumReports = reportSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -139,18 +122,6 @@ function ParentDashboard() {
     );
     setBildirimler(ilgiliReports);
     setYukleniyor(false);
-  };
-
-  const dahaFazlaGetir = async () => {
-    if (!sonPostRef.current || dahaFazlaYukleniyor) return;
-    setDahaFazlaYukleniyor(true);
-    const q = query(collection(db, "posts"), orderBy("tarih", "desc"), startAfter(sonPostRef.current), limit(POST_LIMIT));
-    const snap = await getDocs(q);
-    const ilgili = await postlariIsle(snap.docs, cocuklarRef.current);
-    setTumGonderiler(prev => [...prev, ...ilgili]);
-    sonPostRef.current = snap.docs[snap.docs.length - 1] || null;
-    setDahaFazlaVar(snap.docs.length === POST_LIMIT);
-    setDahaFazlaYukleniyor(false);
   };
 
   // ===== MESAJLAR =====
@@ -245,36 +216,7 @@ function ParentDashboard() {
       veliKaldirmaTarihi: serverTimestamp(),
       veliKaldiranUid: auth.currentUser.uid
     });
-    setTumGonderiler(prev => prev.map(g =>
-      g.id === gonderiId ? { ...g, veliKaldirdi: true } : g
-    ));
-  };
-
-  const yorumlariGetir = async (postId) => {
-    const q = query(collection(db, "posts", postId, "comments"), orderBy("tarih", "asc"));
-    const snapshot = await getDocs(q);
-    const tumYorumlar = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    const filtrelenmis = tumYorumlar.filter(y => cocuklar.includes(y.yazarUid));
-    setYorumlar(prev => ({ ...prev, [postId]: filtrelenmis }));
-  };
-
-  const yorumToggle = async (postId) => {
-    const acik = !acikYorumlar[postId];
-    setAcikYorumlar(prev => ({ ...prev, [postId]: acik }));
-    if (acik && !yorumlar[postId]) await yorumlariGetir(postId);
-  };
-
-  const yorumSil = async (postId, yorumId, yazarUid) => {
-    if (!cocuklar.includes(yazarUid)) return;
-    if (!window.confirm("Bu yorumu kaldirmak istediginizden emin misiniz?")) return;
-    await updateDoc(doc(db, "posts", postId, "comments", yorumId), {
-      silindi: true, silinmeTarihi: serverTimestamp(),
-      silenUid: auth.currentUser.uid, silenRol: "parent"
-    });
-    setYorumlar(prev => ({
-      ...prev,
-      [postId]: prev[postId].map(y => y.id === yorumId ? { ...y, silindi: true } : y)
-    }));
+    setCocukPostlari(prev => prev.map(g => g.id === gonderiId ? { ...g, veliKaldirdi: true } : g));
   };
 
   const bildirimOkundu = async (reportId) => {
@@ -332,6 +274,11 @@ function ParentDashboard() {
     const d = new Date(sn * 1000);
     return d.toLocaleDateString("tr-TR") + " " + d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
   };
+
+  // Etkilesimler: su an sadece cocugun kendi postlari (yorumlar ileride eklenecek)
+  const etkilesimler = [
+    ...cocukPostlari.map(p => ({ tur: "post", zaman: p.tarih?.seconds || 0, veri: p }))
+  ].sort((a, b) => b.zaman - a.zaman);
 
   return (
     <div style={{ minHeight: "100vh", background: bg, transition: "background 0.2s" }}>
@@ -621,11 +568,6 @@ function ParentDashboard() {
                   <div style={{ background: "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
                     <p style={{ margin: 0 }}>{postDetay[b.postId].icerik}</p>
                     <MedyaGoster url={postDetay[b.postId].fotoUrl} />
-                    {postDetay[b.postId].tarih && (
-                      <small style={{ color: "#6b7280", fontSize: "11px" }}>
-                        📅 Paylasim tarihi: {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
-                      </small>
-                    )}
                   </div>
                 )}
                 <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 8px" }}>
@@ -656,83 +598,52 @@ function ParentDashboard() {
           )}
         </div>
       ) : (
-        tumGonderiler.length === 0 ? (
+        etkilesimler.length === 0 ? (
           <div style={{ background: "white", padding: "20px", borderRadius: "12px", textAlign: "center", color: "#888" }}>
             <p>Cocugunuzun hic etkilesimi yok.</p>
           </div>
         ) : (
           <div>
             <h3 style={{ color: "#666", marginBottom: "16px" }}>Cocugunuzun Etkilesimleri</h3>
-            {tumGonderiler.map(g => {
-              const yazarCocuk = cocukBilgileri[g.yazarUid];
-              const begenenler = g.begenenler || [];
-              const kaldirildi = g.veliKaldirdi || g.ogretmenKaldirdi || g.ogrenciSildi;
-              return (
-                <div key={g.id} style={{
-                  background: "white", padding: "16px", borderRadius: "12px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px",
-                  opacity: kaldirildi ? 0.75 : 1, border: kaldirildi ? "1px solid #e5e7eb" : "none"
-                }}>
-                  {!g.cocukYazari && (
-                    <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: "8px", fontSize: "11px", marginBottom: "8px", display: "inline-block" }}>
-                      💬 Cocugunuz yorum yapti
+            {etkilesimler.map((e) => {
+                const g = e.veri;
+                const yazarCocuk = cocukBilgileri[g.yazarUid];
+                const begenenler = g.begenenler || [];
+                const kaldirildi = g.veliKaldirdi || g.ogretmenKaldirdi || g.ogrenciSildi;
+                return (
+                  <div key={"post_" + g.id} style={{
+                    background: "white", padding: "16px", borderRadius: "12px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px",
+                    opacity: kaldirildi ? 0.75 : 1, border: kaldirildi ? "1px solid #e5e7eb" : "none"
+                  }}>
+                    <span style={{ background: "#dbeafe", color: "#1e40af", padding: "2px 8px", borderRadius: "8px", fontSize: "11px", marginBottom: "8px", display: "inline-block" }}>
+                      📝 Paylasim
                     </span>
-                  )}
-                  {kaldirildi && (
-                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "6px" }}>
-                      {g.ogrenciSildi && <span style={{ background: "#f3f4f6", color: "#6b7280", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Ogrenci sildi</span>}
-                      {g.veliKaldirdi && <span style={{ background: "#ede9fe", color: "#5b21b6", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Veli kaldirdi</span>}
-                      {g.ogretmenKaldirdi && <span style={{ background: "#fee2e2", color: "#991b1b", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Ogretmen kaldirdi</span>}
-                    </div>
-                  )}
-                  {!kaldirildi && <p style={{ margin: "0 0 8px 0", fontSize: "15px" }}>{g.icerik}</p>}
-                  {!kaldirildi && g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <small onClick={() => setSecilenProfil(g.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "13px" }}>{g.yazar}</small>
-                      {yazarCocuk?.dondurulmus && <span style={{ background: "#fee2e2", color: "#ef4444", padding: "2px 6px", borderRadius: "8px", fontSize: "11px" }}>🔒 Dondurulmus</span>}
-                    </div>
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <span style={{ padding: "4px 10px", background: "#fee2e2", color: "#ef4444", borderRadius: "6px", fontSize: "12px" }}>❤️ {begenenler.length}</span>
-                      <button onClick={() => yorumToggle(g.id)} style={{ padding: "4px 10px", background: "#e0e7ff", color: "#4f46e5", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>💬 Yorumlar</button>
-                      {g.cocukYazari && !g.veliKaldirdi && (
-                        <button onClick={() => handleSil(g.id, g.yazarUid)} style={{ padding: "4px 10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>🗑️ Kaldir</button>
-                      )}
+                    {kaldirildi && (
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "6px", marginTop: "4px" }}>
+                        {g.ogrenciSildi && <span style={{ background: "#f3f4f6", color: "#6b7280", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Ogrenci sildi</span>}
+                        {g.veliKaldirdi && <span style={{ background: "#ede9fe", color: "#5b21b6", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Veli kaldirdi</span>}
+                        {g.ogretmenKaldirdi && <span style={{ background: "#fee2e2", color: "#991b1b", padding: "2px 8px", borderRadius: "6px", fontSize: "11px" }}>Ogretmen kaldirdi</span>}
+                      </div>
+                    )}
+                    {!kaldirildi && <p style={{ margin: "8px 0", fontSize: "15px" }}>{g.icerik}</p>}
+                    {!kaldirildi && g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <small onClick={() => setSecilenProfil(g.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "13px" }}>{g.yazar}</small>
+                        {yazarCocuk?.dondurulmus && <span style={{ background: "#fee2e2", color: "#ef4444", padding: "2px 6px", borderRadius: "8px", fontSize: "11px" }}>🔒 Dondurulmus</span>}
+                        {g.tarih && <small style={{ color: "#9ca3af", fontSize: "11px" }}>{mesajTarih(g.tarih.seconds)}</small>}
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <span style={{ padding: "4px 10px", background: "#fee2e2", color: "#ef4444", borderRadius: "6px", fontSize: "12px" }}>❤️ {begenenler.length}</span>
+                        {!g.veliKaldirdi && (
+                          <button onClick={() => handleSil(g.id, g.yazarUid)} style={{ padding: "4px 10px", background: "#ef4444", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>🗑️ Kaldir</button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  {acikYorumlar[g.id] && (
-                    <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #f0f4ff" }}>
-                      {yorumlar[g.id] && yorumlar[g.id].length === 0 && <p style={{ color: "#9ca3af", fontSize: "13px", textAlign: "center" }}>Cocugunuzun yorumu yok.</p>}
-                      {yorumlar[g.id] && yorumlar[g.id].map(y => (
-                        <div key={y.id} style={{ background: "#f9fafb", padding: "10px", borderRadius: "8px", marginBottom: "6px", position: "relative", opacity: y.silindi ? 0.6 : 1 }}>
-                          {y.silindi && (
-                            <span style={{ fontSize: "11px", color: "#6b7280", display: "block", marginBottom: "4px" }}>
-                              [{y.silenRol === "parent" ? "Veli kaldirdi" : y.silenRol === "teacher" ? "Ogretmen kaldirdi" : "Ogrenci sildi"}]
-                            </span>
-                          )}
-                          <p style={{ margin: "0 0 4px", fontSize: "14px" }}>{y.icerik}</p>
-                          <small onClick={() => setSecilenProfil(y.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline", fontSize: "12px" }}>{y.yazar}</small>
-                          {!y.silindi && cocuklar.includes(y.yazarUid) && (
-                            <button onClick={() => yorumSil(g.id, y.id, y.yazarUid)} style={{ position: "absolute", top: "8px", right: "8px", padding: "2px 8px", background: "#ef4444", color: "white", border: "none", borderRadius: "5px", cursor: "pointer", fontSize: "11px" }}>
-                              Kaldir
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
+                );
             })}
-
-            {dahaFazlaVar && (
-              <div style={{ textAlign: "center", marginTop: "8px" }}>
-                <button onClick={dahaFazlaGetir} disabled={dahaFazlaYukleniyor}
-                  style={{ padding: "10px 24px", background: dahaFazlaYukleniyor ? "#9ca3af" : "#4f46e5", color: "white", border: "none", borderRadius: "8px", cursor: dahaFazlaYukleniyor ? "default" : "pointer", fontSize: "14px", fontWeight: "600" }}>
-                  {dahaFazlaYukleniyor ? "Yukleniyor..." : "Daha fazla goster"}
-                </button>
-              </div>
-            )}
           </div>
         )
       )}
