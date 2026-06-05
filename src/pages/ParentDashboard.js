@@ -259,7 +259,6 @@ function ParentDashboard() {
 
   const IZIN_SECENEKLERI = [
     { deger: "arkadas", label: "👫 Sadece arkadaslari", aciklama: "Sadece arkadas oldugu kisilerle" },
-    { deger: "okul", label: "🏫 Kendi okulundan", aciklama: "Ayni okuldaki ogrencilerle" },
     { deger: "kapali", label: "🚫 Kapali", aciklama: "Hic kimseyle" }
   ];
 
@@ -429,8 +428,8 @@ function ParentDashboard() {
             cocuklar.map(uid => {
               const cocuk = cocukBilgileri[uid];
               if (!cocuk) return null;
-              const dmIzni = cocuk.dmIzni || "okul";
-              const akisIzni = cocuk.akisIzni || "okul";
+              const dmIzni = (cocuk.dmIzni === "okul" || !cocuk.dmIzni) ? "arkadas" : cocuk.dmIzni;
+              const akisIzni = (cocuk.akisIzni === "okul" || !cocuk.akisIzni) ? "arkadas" : cocuk.akisIzni;
               return (
                 <div key={uid} style={{ background: kartBg, padding: "18px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "16px" }}>
                   <p style={{ margin: "0 0 14px", fontSize: "16px", fontWeight: "700", color: yaziRenk }}>👶 {cocuk.isim || "Cocuk"}</p>
