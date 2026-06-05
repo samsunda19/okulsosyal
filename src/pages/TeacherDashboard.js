@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db, auth } from "../firebase";
-import { doc, getDocFromServer, getDoc, collection, getDocs, addDoc, orderBy, query, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDocFromServer, collection, getDocs, addDoc, orderBy, query, updateDoc, serverTimestamp } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
 
@@ -63,7 +63,6 @@ function TeacherDashboard() {
   const [secilenProfil, setSecilenProfil] = useState(null);
   const [aktifSekme, setAktifSekme] = useState("paylasimlar");
   const [acikIcerik, setAcikIcerik] = useState({});
-  const [postDetay, setPostDetay] = useState({});
   const [tumOgrenciler, setTumOgrenciler] = useState([]);
   const [secilenOgrenciler, setSecilenOgrenciler] = useState([]);
   const [sinifAcik, setSinifAcik] = useState(false);
@@ -244,13 +243,10 @@ function TeacherDashboard() {
     alert("Bildirim admine iletildi!");
   };
 
-  const postIcerikGoster = async (reportId, postId) => {
-    const zatenAcik = acikIcerik[reportId];
-    setAcikIcerik(prev => ({ ...prev, [reportId]: !zatenAcik }));
-    if (!zatenAcik && !postDetay[postId]) {
-      const postDoc = await getDoc(doc(db, "posts", postId));
-      if (postDoc.exists()) setPostDetay(prev => ({ ...prev, [postId]: { id: postDoc.id, ...postDoc.data() } }));
-    }
+  const postIcerikGoster = async (reportId) => {
+    // Postu Firestore'dan CEKMIYORUZ (baskasinin cocugunun postu olabilir, Rules engeller).
+    // Sikayet detayi (metin + foto) zaten reports kaydinda var.
+    setAcikIcerik(prev => ({ ...prev, [reportId]: !prev[reportId] }));
   };
 
   const filtrelenmisOgrenciler = tumOgrenciler.filter(o => {
@@ -447,21 +443,16 @@ function TeacherDashboard() {
                   <p style={{ margin: "0 0 4px", fontSize: "14px", color: yaziRenk }}>{b.icerikMetni}</p>
                   <small style={{ color: ikincilYazi }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.yazar}</span></small>
                 </div>
-                {b.tip === "post" && (
-                  <button onClick={() => postIcerikGoster(b.id, b.postId)}
+                {b.tip === "post" && (b.icerikMetni || b.fotoUrl) && (
+                  <button onClick={() => postIcerikGoster(b.id)}
                     style={{ fontSize: "12px", color: "#4f46e5", background: "none", border: "none", cursor: "pointer", padding: "0", marginBottom: "8px" }}>
                     {acikIcerik[b.id] ? "▲ Gonderiyi gizle" : "▼ Gonderiyi tam goster"}
                   </button>
                 )}
-                {acikIcerik[b.id] && postDetay[b.postId] && (
+                {acikIcerik[b.id] && (
                   <div style={{ background: karanlikMod ? "#4b5563" : "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
-                    <p style={{ margin: 0, color: yaziRenk }}>{postDetay[b.postId].icerik}</p>
-                    <MedyaGoster url={postDetay[b.postId].fotoUrl} />
-                    {postDetay[b.postId].tarih && (
-                      <small style={{ color: ikincilYazi, fontSize: "11px" }}>
-                        📅 Paylasim tarihi: {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleDateString("tr-TR")} {new Date(postDetay[b.postId].tarih.seconds * 1000).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
-                      </small>
-                    )}
+                    <p style={{ margin: 0, color: yaziRenk }}>{b.icerikMetni}</p>
+                    {b.fotoUrl && <MedyaGoster url={b.fotoUrl} />}
                   </div>
                 )}
                 <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.bildiren}</span></p>

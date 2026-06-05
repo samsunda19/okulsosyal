@@ -43,7 +43,6 @@ function ParentDashboard() {
   const [secilenProfil, setSecilenProfil] = useState(null);
   const [aktifSekme, setAktifSekme] = useState("etkilesimler");
   const [acikIcerik, setAcikIcerik] = useState({});
-  const [postDetay, setPostDetay] = useState({});
   const [ogretmenGonderiler, setOgretmenGonderiler] = useState([]);
   const [ogretmenIsim, setOgretmenIsim] = useState("");
   const [ogretmenUid, setOgretmenUid] = useState(null);
@@ -249,15 +248,10 @@ function ParentDashboard() {
     alert("Bildirim admine iletildi!");
   };
 
-  const postIcerikGoster = async (reportId, postId) => {
-    const zatenAcik = acikIcerik[reportId];
-    setAcikIcerik(prev => ({ ...prev, [reportId]: !zatenAcik }));
-    if (!zatenAcik && !postDetay[postId]) {
-      const postDoc = await getDoc(doc(db, "posts", postId));
-      if (postDoc.exists()) {
-        setPostDetay(prev => ({ ...prev, [postId]: { id: postDoc.id, ...postDoc.data() } }));
-      }
-    }
+  const postIcerikGoster = async (reportId) => {
+    // Postu Firestore'dan CEKMIYORUZ (baskasinin cocugunun postu olabilir, Rules engeller).
+    // Sikayet detayi (metin + foto) zaten reports kaydinda var, onu gosteriyoruz.
+    setAcikIcerik(prev => ({ ...prev, [reportId]: !prev[reportId] }));
   };
 
   const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.veliGordu).length;
@@ -558,16 +552,16 @@ function ParentDashboard() {
                   <p style={{ margin: "0 0 4px", fontSize: "14px" }}>{b.icerikMetni}</p>
                   <small style={{ color: "#6b7280" }}>Yazan: <span onClick={() => setSecilenProfil(b.yazarUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.yazar}</span></small>
                 </div>
-                {b.tip === "post" && (
-                  <button onClick={() => postIcerikGoster(b.id, b.postId)}
+                {b.tip === "post" && (b.icerikMetni || b.fotoUrl) && (
+                  <button onClick={() => postIcerikGoster(b.id)}
                     style={{ fontSize: "12px", color: "#4f46e5", background: "none", border: "none", cursor: "pointer", padding: "0", marginBottom: "8px" }}>
                     {acikIcerik[b.id] ? "▲ Gonderiyi gizle" : "▼ Gonderiyi tam goster"}
                   </button>
                 )}
-                {acikIcerik[b.id] && postDetay[b.postId] && (
+                {acikIcerik[b.id] && (
                   <div style={{ background: "#ede9fe", padding: "10px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px" }}>
-                    <p style={{ margin: 0 }}>{postDetay[b.postId].icerik}</p>
-                    <MedyaGoster url={postDetay[b.postId].fotoUrl} />
+                    <p style={{ margin: 0 }}>{b.icerikMetni}</p>
+                    {b.fotoUrl && <MedyaGoster url={b.fotoUrl} />}
                   </div>
                 )}
                 <p style={{ fontSize: "12px", color: "#6b7280", margin: "0 0 8px" }}>

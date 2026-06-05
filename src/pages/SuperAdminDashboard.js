@@ -360,8 +360,8 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
   };
 
   const bildirimOkundu = async (reportId) => {
-    await updateDoc(doc(db, "reports", reportId), { okundu: true });
-    setBildirimler(prev => prev.map(b => b.id === reportId ? { ...b, okundu: true } : b));
+    await updateDoc(doc(db, "reports", reportId), { adminOkudu: true });
+    setBildirimler(prev => prev.map(b => b.id === reportId ? { ...b, adminOkudu: true } : b));
   };
 
   const bildirimKaldir = async (reportId) => {
@@ -533,8 +533,8 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
     ? onayliOgrenciler.filter(o => (o.isim || "").toLowerCase().includes(cocukAramaMetni.toLowerCase()))
     : onayliOgrenciler;
 
-  const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.okundu).length;
-  const yeniBildirimSayisi = bildirimler.filter(b => !b.okundu).length;
+  const acilBildirimSayisi = bildirimler.filter(b => b.acil && !b.adminOkudu).length;
+  const yeniBildirimSayisi = bildirimler.filter(b => !b.adminOkudu).length;
 
   return (
     <div style={{ minHeight: "100vh", background: bg, transition: "background 0.2s" }}>
@@ -951,10 +951,10 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
             <>
               <h3 style={{ color: ikincilYazi, marginBottom: "16px" }}>Iletilen Bildirimler ({bildirimler.length})</h3>
               {bildirimler.map(b => (
-                <div key={b.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", border: b.acil && !b.okundu ? "2px solid #ef4444" : `1px solid ${borderRenk}` }}>
-                  {b.acil && !b.okundu && <div style={{ background: "#fee2e2", color: "#991b1b", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", marginBottom: "8px", fontWeight: "700" }}>🚨 ACIL: Cocuk yardim istiyor!</div>}
+                <div key={b.id} style={{ background: kartBg, padding: "16px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "12px", border: b.acil && !b.adminOkudu ? "2px solid #ef4444" : `1px solid ${borderRenk}` }}>
+                  {b.acil && !b.adminOkudu && <div style={{ background: "#fee2e2", color: "#991b1b", padding: "6px 10px", borderRadius: "6px", fontSize: "12px", marginBottom: "8px", fontWeight: "700" }}>🚨 ACIL: Cocuk yardim istiyor!</div>}
                   <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
-                    {!b.okundu && <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>YENI</span>}
+                    {!b.adminOkudu && <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "600" }}>YENI</span>}
                   </div>
                   {b.ileten && <p style={{ margin: "0 0 6px", fontSize: "12px", color: "#4f46e5", fontWeight: "600" }}>📨 Ileten: {b.ileten} ({b.iletenRol === "teacher" ? "Ogretmen" : "Veli"})</p>}
                   <p style={{ margin: "0 0 6px", fontSize: "13px", color: ikincilYazi }}>📋 Sebep: <strong>{b.kategori}</strong>{b.digerSebep && <span> — "{b.digerSebep}"</span>}</p>
@@ -979,7 +979,7 @@ Eğer kullanıcı hikaye/oyun ISTEMIYORSA (normal sohbet, soru, ödev metni vs.)
                   )}
                   <p style={{ fontSize: "12px", color: ikincilYazi, margin: "0 0 8px" }}>🚩 Bildiren: <span onClick={() => setSecilenProfil(b.bildirenUid)} style={{ color: "#4f46e5", cursor: "pointer", textDecoration: "underline" }}>{b.bildiren}</span></p>
                   <div style={{ display: "flex", gap: "6px" }}>
-                    {!b.okundu && <button onClick={() => bildirimOkundu(b.id)} style={{ flex: 1, padding: "6px 12px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>✓ Okundu</button>}
+                    {!b.adminOkudu && <button onClick={() => bildirimOkundu(b.id)} style={{ flex: 1, padding: "6px 12px", background: "#10b981", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>✓ Okundu</button>}
                     <button onClick={() => bildirimKaldir(b.id)} style={{ padding: "6px 12px", background: "#6b7280", color: "white", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "12px" }}>🗑️ Kaldir</button>
                   </div>
                 </div>
