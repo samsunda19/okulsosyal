@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { db, auth } from "../firebase";
-import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp, query, where, getDocs, deleteDoc } from "firebase/firestore";
 import { YILLIK_PLAN, DERS_BILGI } from "./yillikPlan";
 import { tariheGoreHafta } from "./haftaTakvimi";
 
@@ -33,7 +34,18 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
   const [aiYukleniyorTur, setAiYukleniyorTur] = useState(null); // hangi tur uretiliyor
   const [aiHata, setAiHata] = useState("");
   const [ekPaylasildi, setEkPaylasildi] = useState(false);
+  const [ogretmenNotu, setOgretmenNotu] = useState("");
   const [acikTur, setAcikTur] = useState(null); // hangi AI turu icerik acik
+  // Icerik Havuzu
+  const [duzenlenenTur, setDuzenlenenTur] = useState(null); // hangi tur duzenleniyor
+  const [duzenMetin, setDuzenMetin] = useState(""); // duzenleme kutusu metni
+  const [duzenSayfa, setDuzenSayfa] = useState(0); // duzenlemede aktif sayfa indexi
+  const [havuzaEklendi, setHavuzaEklendi] = useState({}); // {tur: true}
+  const [havuzAcik, setHavuzAcik] = useState(false); // havuzdan indir paneli acik mi
+  const [havuzListe, setHavuzListe] = useState({}); // {tur: [icerikler]}
+  const [havuzYukleniyor, setHavuzYukleniyor] = useState(false);
+  const [havuzSeciliTur, setHavuzSeciliTur] = useState("anlatim"); // havuz modalinda secili tur
+  const [havuzSeciliItem, setHavuzSeciliItem] = useState(null); // havuz modalinda secili icerik (onizlenen)
 
   useEffect(() => {
     (async () => {
@@ -179,25 +191,52 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
 
   // ===== Tek bir tur uret (AI) =====
   const TUR_BILGI = {
-    anlatim: { ad: "Konu Anlatimi (Ogretmen Kilavuzu)", talimat: "Ogretmenin sinifta bu konuyu ADIM ADIM nasil anlatacagina dair detayli bir KILAVUZ hazirla. Su yapida olsun: (1) Derse giris/dikkat cekme onerisi, (2) Konuyu acmak icin gunluk hayattan SOMUT ornekler (orn: tartma konusunda 'kalemi mektup terazisiyle, bir cuval unu kantarla, kendimizi banyo terazisiyle tartariz' gibi karsilastirmali ornekler), (3) Ogretmenin sinifta sorabilecegi sorular ('Cocuklar sizce fil mi agir kus mu?'), (4) Yapilabilecek basit etkinlik/gosterim onerisi, (5) Dikkat edilmesi gereken kavram yanilgilari. Dolu, ogretmene gercekten yol gosteren bir metin olsun. En az 4-5 paragraf." },
-    sorular: { ad: "Sinif Sorulari", talimat: "Konuyla ilgili 10 adet sinif ici soru hazirla. Kolaydan zora siralanmis, numarali. Cesitli olsun (bosluk doldurma, problem, kisa cevap). Sonunda CEVAP ANAHTARI bolumu ekle. Toplamda 2 sayfalik dolu bir calisma kagidi olacak kadar icerik uret." },
-    odev: { ad: "Ev Odevi", talimat: "Ev odevi olarak 10 adet alistirma hazirla. Kolaydan zora, numarali, cocugun evde tek basina yapabilecegi seviyede. Cesitli soru tipleri kullan. Sonunda kisa CEVAP ANAHTARI. Toplamda 2 sayfalik dolu bir odev olacak kadar icerik uret." },
-    ekSorular: { ad: "Uygulama Sorulari", talimat: "Cocuklarin telefonda/ekrandan gorecegi 10 adet kisa, net soru/problem hazirla. SADECE sorular, numarali (1. 2. 3. ...), alt alta, cok sade dil. O gun sinifta verilenlerden FARKLI, ayni konuda taze sorular. Cevap anahtari EKLEME (cocuk gorecek)." }
+    anlatim: {
+      ad: "Konu Anlatimi (Ogretmen Kilavuzu)",
+      rol: "Sen 20 yillik deneyimli bir sinif ogretmenisin ve yeni mezun ogretmenlere mentorluk yapiyorsun. Bir konuyu sinifta nasil anlatacaklarini, hangi gunluk hayat orneklerini verecekleri, hangi sorulari soracaklari ve nelere dikkat edecekleri konusunda onlara adim adim yol gosterirsin. Amacin, deneyimsiz bir ogretmenin eline alip 'iste boyle anlat' diyebilecegi net, dolu ve uygulanabilir bir kilavuz vermek.",
+      talimat: "Ogretmenin sinifta bu konuyu ADIM ADIM nasil anlatacagina dair detayli bir KILAVUZ hazirla. Su yapida olsun: (1) Derse giris/dikkat cekme onerisi, (2) Konuyu acmak icin gunluk hayattan SOMUT, karsilastirmali ornekler, (3) Ogretmenin sinifta sorabilecegi sorular, (4) Yapilabilecek basit etkinlik/gosterim onerisi, (5) Cocuklarin sik yaptigi kavram yanilgilari ve nasil duzeltilecegi. Dolu, gercekten yol gosteren bir metin olsun. En az 4-5 paragraf."
+    },
+    sorular: {
+      ad: "Sinif Sorulari",
+      rol: "Sen olcme ve degerlendirme uzmani, hazirladigi sorular egitim dergilerinde yayinlanan cok deneyimli bir sinif ogretmenisin. Kazanima tam uygun, kolaydan zora siralanmis, secenekleri/celdiricileri ozenli, seviyeye uygun ve ogrenciyi dusunduren sorular hazirlarsin.",
+      talimat: "Konuyla ilgili 10 adet sinif ici soru hazirla. Kolaydan zora siralanmis, numarali. Cesitli olsun (bosluk doldurma, problem, kisa cevap, eslestirme). Sonunda mutlaka 'CEVAP ANAHTARI' basligi ile cevaplari ekle. Sorular kisa ve net olsun, gereksiz uzatma. Tum sorular 2 sayfaya rahatca sigacak kadar derli toplu olsun."
+    },
+    odev: {
+      ad: "Ev Odevi",
+      rol: "Sen velilerin ve ogrencilerin cok sevdigi, odevleri hem ogretici hem sikmadan hazirlayan deneyimli bir sinif ogretmenisin. Cocugun evde tek basina, keyifle yapabilecegi, konuyu pekistiren odevler hazirlarsin.",
+      talimat: "Ev odevi olarak 10 adet alistirma hazirla. Kolaydan zora, numarali, cocugun evde tek basina yapabilecegi seviyede. Cesitli soru tipleri kullan. Sonunda mutlaka 'CEVAP ANAHTARI' basligi ile cevaplari ekle. Sorular kisa ve net olsun, gereksiz uzatma. Tum sorular 2 sayfaya rahatca sigacak kadar derli toplu olsun."
+    },
+    ekSorular: {
+      ad: "Uygulama Sorulari",
+      rol: "Sen cocuklarin telefon/tablet uzerinden cozmekten keyif aldigi, kisa ve net sorular hazirlayan deneyimli bir sinif ogretmenisin. Sade, anlasilir, cocugun ekrandan okuyup defterine cozebilecegi sorular yazarsin.",
+      talimat: "Cocuklarin telefonda/ekrandan gorecegi 10 adet kisa, net soru/problem hazirla. SADECE sorular, numarali (1. 2. 3. ...), alt alta, cok sade dil. O gun sinifta verilenlerden FARKLI, ayni konuda taze sorular. Cevap anahtari EKLEME (cocuk gorecek)."
+    }
+  };
+
+  // Turkce dersinde kazanim turune gore ozel yonlendirme
+  const turkceEkKural = (dersAd, kazanimMetni) => {
+    if (!dersAd.toLowerCase().includes("turkce")) return "";
+    const k = kazanimMetni.toLowerCase();
+    const yazma = k.includes("yaz") || k.includes("siir") || k.includes("hikaye") || k.includes("metin olus") || k.includes("gunluk") || k.includes("ani");
+    const okumaDinleme = k.includes("oku") || k.includes("dinle") || k.includes("metin") || k.includes("anla");
+    if (yazma) return "\nONEMLI (Turkce-Yazma): Bu bir yazma kazanimi. Cocuga YAZABILECEGI bir gorev/yonerge ver (orn: belirli konuda kisa metin/siir/hikaye yazma). Noktalama isaretlerine ve imla kurallarina dikkat etmesini hatirlat. Ornek bir kisa metin de gosterebilirsin.";
+    if (okumaDinleme) return "\nONEMLI (Turkce-Okuma/Dinleme): Bu bir okuma/dinleme kazanimi. ONCE konuya uygun KISA bir metin/hikaye olustur (cocuk seviyesinde), SONRA tum sorulari/calismayi bu metne bagla. Metni en uste yaz, sorulari metne gore sor.";
+    return "";
   };
 
   const aiUretTur = async (dersAd, plan, tur) => {
     setAiYukleniyorTur(tur); setAiHata("");
-    const kazanimMetni = plan.kazanimlar.map(k => k.aciklama).join("; ");
+    const kazanimMetni = plan.kazanimlar.map(k => k.kod + " - " + k.aciklama).join("; ");
     const tb = TUR_BILGI[tur];
-    const prompt = `Sen deneyimli bir ilkokul 4. sinif ogretmenisin. Asagidaki ders icin Turkce, sade, cocuk seviyesine uygun icerik hazirla.
-
-Ders: ${dersAd}
+    const ekKural = turkceEkKural(dersAd, kazanimMetni);
+    const sistemPrompt = tb.rol + " KESINLIKLE 4. sinif (9-10 yas, ilkokul) seviyesinde calisirsin: dil sade, sorular basit ve somut olmali. Ortaokul/lise kavramlari KULLANMA. Ilkokulda olmayan arac-gerec verme (ornegin desimetre, hassas terazi gibi). Sadece 4. sinif ogrencisinin bildigi birimleri ve kavramlari kullan. Turkce karakterleri dogru kullanirsin (ç, ş, ğ, ı, ö, ü). Sadece istenen icerigi uretirsin, gereksiz aciklama eklemezsin.";
+    const prompt = `Ders: ${dersAd}
 Konu: ${plan.konu}
-Kazanimlar: ${kazanimMetni}
+Kazanim(lar): ${kazanimMetni}
 
-GOREV: ${tb.talimat}
+GOREV: ${tb.talimat}${ekKural}
 
-Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal kullan (c, s, g, i, o, u yerine gercek ç, ş, ğ, ı, ö, ü).`;
+Yukaridaki kazanima SIKI SIKIYA bagli kal. Konu disina cikma. Icerigi dogrudan uret.`;
 
     try {
       const response = await fetch(WORKER_URL + "/anthropic", {
@@ -209,6 +248,7 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 3000,
+          system: sistemPrompt,
           messages: [{ role: "user", content: prompt }]
         })
       });
@@ -231,16 +271,49 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
   };
 
   // ===== PDF indir (basit, yazdir penceresi) =====
-  const pdfIndir = (baslik, icerik) => {
-    const pencere = window.open("", "_blank");
-    if (!pencere) { alert("Pop-up engellendi. Lutfen izin ver."); return; }
-    pencere.document.write(`<html><head><title>${baslik}</title>
-      <style>body{font-family:Arial,sans-serif;padding:30px;line-height:1.7;color:#222;}
-      h1{font-size:18px;border-bottom:2px solid #4f46e5;padding-bottom:8px;}
-      pre{white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;}</style></head>
-      <body><h1>${baslik}</h1><pre>${icerik.replace(/</g,"&lt;")}</pre>
-      <scr"+"ipt>window.onload=function(){window.print();}</scr"+"ipt></body></html>`);
-    pencere.document.close();
+  const wordIndir = (baslik, icerik, dersAd2, konu2) => {
+    const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // Cevap anahtarini ayir (varsa)
+    let sorularKismi = icerik, cevapKismi = "";
+    const m = icerik.search(/CEVAP\s*ANAHTARI/i);
+    if (m !== -1) {
+      sorularKismi = icerik.slice(0, m).trim();
+      cevapKismi = icerik.slice(m).replace(/CEVAP\s*ANAHTARI[:\s]*/i, "").trim();
+    }
+    const ustBilgi = (dersAd2 ? esc(dersAd2) : "") + (konu2 ? " - " + esc(konu2) : "");
+    const cevapHtml = cevapKismi ? `
+      <br clear="all" style="page-break-before:always" />
+      <h1>Cevap Anahtari</h1>
+      <p class="ust">${ustBilgi}</p>
+      <p class="govde">${esc(cevapKismi).replace(/\n/g, "<br/>")}</p>` : "";
+    // Word'un anladigi HTML (.doc) formati
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="utf-8"><title>${esc(baslik)}</title>
+      <style>
+        @page { margin: 1.4cm 1.6cm; }
+        body { font-family: "Calibri", Arial, sans-serif; color: #1a1a2e; font-size: 11pt; }
+        h1 { font-size: 14pt; color: #1a1a2e; border-bottom: 2px solid #4f46e5; padding-bottom: 3px; margin: 0 0 2px; }
+        .ust { font-size: 9pt; color: #4f46e5; font-weight: bold; margin: 1px 0 4px; }
+        .adsoyad { font-size: 10pt; color: #555; margin: 4px 0 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        .govde { font-size: 11pt; line-height: 1.45; }
+      </style></head>
+      <body>
+        <h1>${esc(baslik)}</h1>
+        <p class="ust">${ustBilgi}</p>
+        <p class="adsoyad">Ad Soyad: ______________________&nbsp;&nbsp;&nbsp;&nbsp;Tarih: ____________</p>
+        <p class="govde">${esc(sorularKismi).replace(/\n/g, "<br/>")}</p>
+        ${cevapHtml}
+      </body></html>`;
+    const blob = new Blob(["\ufeff", html], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const dosyaAd = (baslik + (konu2 ? " - " + konu2 : "")).replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ ]/g, "").trim() + ".doc";
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = dosyaAd;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ===== Ek sorulari paylas (cocuk ekrandan gorur) =====
@@ -248,20 +321,148 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
     if (!aiIcerik.ekSorular) return;
     try {
       const konuMetni = (dersPlanBilgisi(dersAd)?.konu) || "";
+      const notVar = ogretmenNotu.trim();
       await addDoc(collection(db, "duyurular"), {
-        icerik: "📱 " + dersAd + " - Uygulama Sorulari\n" + (konuMetni ? "(" + konuMetni + ")\n" : "") + "\n" + aiIcerik.ekSorular,
+        icerik: "📱 " + dersAd + " - Uygulama Sorulari\n" + (konuMetni ? "(" + konuMetni + ")\n" : "") + (notVar ? "\n📝 " + notVar + "\n" : "") + "\n" + aiIcerik.ekSorular,
         tip: "uygulamaSorusu",
         dersAd: dersAd,
         sorular: aiIcerik.ekSorular,
         konu: konuMetni,
+        ogretmenNotu: notVar || null,
         yazar: ogretmenIsmi, yazarUid: ogretmenUid,
         tarih: serverTimestamp(), begenenler: [], fotoUrl: null, adminSildi: false
       });
       setEkPaylasildi(true);
+      setOgretmenNotu("");
+    } catch (e) { alert("Paylasilamadi: " + e.message); }
+  };
+
+  // ===== ICERIK HAVUZU =====
+  // Log helper (best-effort: Worker /log)
+  const havuzLog = async (islem, detay) => {
+    try {
+      const token = await auth.currentUser.getIdToken();
+      await fetch(WORKER_URL + "/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ islem, detay, uid: ogretmenUid })
+      });
+    } catch (e) { /* log basarisiz olsa da islem akar */ }
+  };
+
+  // Bir turun kazanim kodunu al (havuz anahtari icin)
+  const kazanimKoduAl = (plan) => (plan && plan.kazanimlar && plan.kazanimlar[0]) ? plan.kazanimlar[0].kod : "GENEL";
+
+  // Duzenlemeyi baslat
+  const duzenleBaslat = (tur) => {
+    setDuzenlenenTur(tur);
+    setDuzenMetin(aiIcerik[tur] || "");
+    setDuzenSayfa(0);
+  };
+  // Duzenlemeyi kaydet (yerel aiIcerik'e)
+  const duzenleKaydet = (tur) => {
+    setAiIcerik(prev => ({ ...prev, [tur]: duzenMetin }));
+    setDuzenlenenTur(null);
+  };
+
+  // Havuza ekle (duzenlenmis/uretilmis icerigi paylasimli havuza)
+  const havuzaEkle = async (dersAd, plan, tur) => {
+    const metin = aiIcerik[tur];
+    if (!metin || !metin.trim()) return;
+    const kod = kazanimKoduAl(plan);
+    try {
+      const ref = await addDoc(collection(db, "icerikHavuzu"), {
+        kazanimKod: kod,
+        tur: tur,
+        ders: dersAd,
+        konu: plan.konu || "",
+        metin: metin,
+        ekleyenUid: ogretmenUid,
+        ekleyenIsim: ogretmenIsmi,
+        tarih: serverTimestamp(),
+        sonDuzenleme: serverTimestamp()
+      });
+      setHavuzaEklendi(prev => ({ ...prev, [tur]: true }));
+      const turAdi = { anlatim: "Konu Anlatimi", sorular: "Sinif Sorulari", odev: "Ev Odevi", ekSorular: "Uygulama Sorulari" }[tur] || tur;
+      const mail = auth.currentUser.email || "";
+      havuzLog("havuz_ekle", ogretmenIsmi + " (" + mail + ") havuza ekledi -> " + dersAd + " / " + kod + " / " + turAdi + " [id:" + ref.id + "]");
+    } catch (e) { alert("Havuza eklenemedi: " + e.message); }
+  };
+
+  // Havuzdan o kazanima ait icerikleri cek
+  const havuzdanCek = async (plan) => {
+    setHavuzYukleniyor(true);
+    const kod = kazanimKoduAl(plan);
+    try {
+      const q = query(collection(db, "icerikHavuzu"), where("kazanimKod", "==", kod));
+      const snap = await getDocs(q);
+      const hepsi = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Ture gore grupla
+      const grup = { anlatim: [], sorular: [], odev: [], ekSorular: [] };
+      hepsi.forEach(it => { if (grup[it.tur]) grup[it.tur].push(it); });
+      // Her grubu en yeniden eskiye sirala
+      Object.keys(grup).forEach(t => grup[t].sort((a,b) => (b.tarih?.seconds||0)-(a.tarih?.seconds||0)));
+      setHavuzListe(grup);
+    } catch (e) { alert("Havuz yuklenemedi: " + e.message); setHavuzListe({}); }
+    setHavuzYukleniyor(false);
+  };
+
+  // Havuzdaki kendi icerigini sil
+  const havuzSil = async (havuzId, tur) => {
+    if (!window.confirm("Bu havuz icerigini silmek istiyor musun?")) return;
+    try {
+      await deleteDoc(doc(db, "icerikHavuzu", havuzId));
+      setHavuzListe(prev => ({ ...prev, [tur]: (prev[tur]||[]).filter(x => x.id !== havuzId) }));
+      const mail2 = auth.currentUser.email || "";
+      havuzLog("havuz_sil", ogretmenIsmi + " (" + mail2 + ") havuzdan sildi [id:" + havuzId + "]");
+    } catch (e) { alert("Silinemedi: " + e.message); }
+  };
+
+  // Havuzdaki icerigi uygulamada paylas (uygulama sorusu ise)
+  const havuzdanPaylas = async (item) => {
+    try {
+      await addDoc(collection(db, "duyurular"), {
+        icerik: "📱 " + item.ders + " - Uygulama Sorulari\n" + (item.konu ? "(" + item.konu + ")\n" : "") + "\n" + item.metin,
+        tip: "uygulamaSorusu",
+        dersAd: item.ders,
+        sorular: item.metin,
+        konu: item.konu || "",
+        ogretmenNotu: null,
+        yazar: ogretmenIsmi, yazarUid: ogretmenUid,
+        tarih: serverTimestamp(), begenenler: [], fotoUrl: null, adminSildi: false
+      });
+      alert("✓ Uygulamada paylasildi!");
     } catch (e) { alert("Paylasilamadi: " + e.message); }
   };
 
   const kart = "#1a1a2e", kart2 = "#252538", yazi = "#f0e6d3", ikincil = "#888";
+
+  // Metni A4 sayfalara bol (onizleme icin)
+  const a4Sayfalara = (metin) => {
+    const satirlar = (metin || "").split("\n");
+    const sayfalar = [];
+    let buSayfaSatir = [], buSayir = 0;
+    const MAX = 44;
+    for (const s of satirlar) {
+      const yuk = Math.max(1, Math.ceil(s.length / 95));
+      if (buSayir + yuk > MAX && buSayfaSatir.length > 0) {
+        sayfalar.push(buSayfaSatir.join("\n")); buSayfaSatir = []; buSayir = 0;
+      }
+      buSayfaSatir.push(s); buSayir += yuk;
+    }
+    if (buSayfaSatir.length) sayfalar.push(buSayfaSatir.join("\n"));
+    if (sayfalar.length === 0) sayfalar.push("");
+    return sayfalar;
+  };
+  const A4Onizleme = ({ metin }) => {
+    const sayfalar = a4Sayfalara(metin);
+    return sayfalar.map((sayfa, i) => (
+      <div key={i} style={{ position: "relative", background: "#fff", maxWidth: "21cm", margin: "0 auto 16px", padding: "2cm 1.8cm", minHeight: "27cm", boxShadow: "0 4px 16px rgba(0,0,0,0.3)", fontFamily: "Calibri, Arial, sans-serif", color: "#1a1a2e", fontSize: "12pt", lineHeight: 1.5, whiteSpace: "pre-wrap", boxSizing: "border-box" }}>
+        {sayfa || <span style={{ color: "#bbb" }}>(bos)</span>}
+        <div style={{ position: "absolute", bottom: "0.8cm", right: "1.8cm", color: "#999", fontSize: "9pt" }}>Sayfa {i+1} / {sayfalar.length}</div>
+      </div>
+    ));
+  };
 
   if (yukleniyor) return <p style={{ color: ikincil, textAlign: "center", padding: "20px", fontFamily: "Georgia, serif" }}>Takvim yukleniyor...</p>;
 
@@ -390,7 +591,7 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
                   const ikon = (() => { const k = dersKeyBul(dItem.ders); return k ? DERS_BILGI[k].ikon : "📓"; })();
                   return (
                     <div key={di} style={{ background: kart2, borderRadius: "9px", marginBottom: "7px", overflow: "hidden", border: acik ? "1px solid #3730a3" : "none" }}>
-                      <div onClick={() => { const yeniAcik = acik ? null : di; setAcikDers(yeniAcik); setIcerikAcik(false); setAiHata(""); setEkPaylasildi(false); if (yeniAcik !== null) { kayitliIcerikCek(dItem.ders); } else { setAiIcerik({}); } }} style={{ padding: "11px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+                      <div onClick={() => { const yeniAcik = acik ? null : di; setAcikDers(yeniAcik); setIcerikAcik(false); setHavuzAcik(false); setHavuzSeciliItem(null); setHavuzaEklendi({}); setDuzenlenenTur(null); setAiHata(""); setEkPaylasildi(false); if (yeniAcik !== null) { kayitliIcerikCek(dItem.ders); } else { setAiIcerik({}); } }} style={{ padding: "11px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
                         <span style={{ color: yazi, fontSize: "13px" }}>{ikon} {dItem.ders} <span style={{ color: ikincil, fontSize: "11px" }}>({dItem.saat} saat)</span></span>
                         <span style={{ color: acik ? "#818cf8" : ikincil, fontSize: "13px" }}>{acik ? "▾" : "▸"}</span>
                       </div>
@@ -402,9 +603,9 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
                                 <div style={{ color: "#06b6d4", fontSize: "12px", marginBottom: "4px" }}>📚 Konu: <span style={{ color: yazi }}>{plan.konu}</span></div>
                                 <div style={{ color: ikincil, fontSize: "11px", lineHeight: 1.5 }}>🎯 Kazanim: <span style={{ color: "#c8bfb0" }}>{plan.kazanimlar.map(k => k.kod + " — " + k.aciklama).join(" · ")}</span></div>
                               </div>
-                              <div style={{ display: "flex", gap: "8px", marginBottom: icerikAcik ? "10px" : "0" }}>
-                                <button onClick={() => { setIcerikAcik(!icerikAcik); }} style={{ flex: 1, padding: "10px", background: "#0f6e56", color: "#fff", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>📖 Kazanimi Paylas</button>
-                                <button onClick={() => { setIcerikAcik(!icerikAcik); }} style={{ flex: 1, padding: "10px", background: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>🤖 AI ile Olustur</button>
+                              <div style={{ display: "flex", gap: "8px", marginBottom: (icerikAcik || havuzAcik) ? "10px" : "0" }}>
+                                <button onClick={() => { setHavuzAcik(true); setHavuzSeciliTur("anlatim"); setHavuzSeciliItem(null); havuzdanCek(plan); }} style={{ flex: 1, padding: "10px", background: "#b45309", color: "#fff", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>📚 Havuzdan Indir</button>
+                                <button onClick={() => { setIcerikAcik(!icerikAcik); setHavuzAcik(false); }} style={{ flex: 1, padding: "10px", background: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>🤖 AI ile Olustur</button>
                               </div>
                               {aiHata && <div style={{ color: "#f87171", fontSize: "11px", padding: "8px", background: "#2a1515", borderRadius: "8px", marginBottom: "8px" }}>{aiHata}</div>}
                               {icerikAcik && (
@@ -420,7 +621,9 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
                                           <span onClick={() => { if(varMi) setAcikTur(acikTur===tur?null:tur); }} style={{ color: tur==="ekSorular"?"#fbbf24":"#06b6d4", fontSize: "12px", fontWeight: "600", cursor: varMi?"pointer":"default", flex: 1 }}>{ikon} {bilgi.ad} {varMi && <span style={{ color: "#666", fontSize: "11px" }}>{acikTur===tur?"▾":"▸"}</span>}</span>
                                           <div style={{ display: "flex", gap: "5px" }}>
-                                            {varMi && tur!=="ekSorular" && <button onClick={() => pdfIndir(dItem.ders + " - " + bilgi.ad, aiIcerik[tur])} style={{ padding: "4px 9px", background: "#0f6e56", color: "#fff", border: "none", borderRadius: "6px", fontSize: "10px", cursor: "pointer" }}>⬇️ PDF</button>}
+                                            {varMi && tur!=="ekSorular" && <button onClick={() => wordIndir(bilgi.ad, aiIcerik[tur], dItem.ders, plan.konu)} style={{ padding: "4px 9px", background: "#0f6e56", color: "#fff", border: "none", borderRadius: "6px", fontSize: "10px", cursor: "pointer" }}>⬇️ Indir</button>}
+                                            {varMi && <button onClick={() => duzenleBaslat(tur)} style={{ padding: "4px 9px", background: "#1e40af", color: "#fff", border: "none", borderRadius: "6px", fontSize: "10px", cursor: "pointer" }}>✏️ Duzenle</button>}
+                                            {varMi && <button onClick={() => havuzaEkle(dItem.ders, plan, tur)} disabled={havuzaEklendi[tur]} style={{ padding: "4px 9px", background: havuzaEklendi[tur]?"#10b981":"#b45309", color: "#fff", border: "none", borderRadius: "6px", fontSize: "10px", cursor: havuzaEklendi[tur]?"default":"pointer" }}>{havuzaEklendi[tur]?"✓ Havuzda":"📚 Havuza Ekle"}</button>}
                                             <button onClick={() => aiUretTur(dItem.ders, plan, tur)} disabled={buYukleniyor}
                                               style={{ padding: "4px 9px", background: buYukleniyor?"#3730a3":(varMi?"#374151":"#7c3aed"), color: "#fff", border: "none", borderRadius: "6px", fontSize: "10px", cursor: buYukleniyor?"wait":"pointer" }}>
                                               {buYukleniyor ? "..." : (varMi ? "🔄 Yeniden" : "✨ Olustur")}
@@ -429,10 +632,16 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
                                         </div>
                                         {varMi && acikTur===tur && <div style={{ color: "#c8bfb0", fontSize: "12px", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: "400px", overflowY: "auto", background: "#0f0f1a", padding: "12px", borderRadius: "6px" }}>{aiIcerik[tur]}</div>}
                                         {varMi && acikTur===tur && tur==="ekSorular" && (
+                                          <>
+                                          <textarea value={ogretmenNotu} onChange={e => setOgretmenNotu(e.target.value)}
+                                            placeholder="Buraya not ekleyebilirsin... orn: Yapamadiginiz sorulari not alin, yarin beraber yapalim."
+                                            rows={2}
+                                            style={{ width: "100%", marginTop: "6px", padding: "8px 10px", background: "#0f0f1a", color: yazi, border: "1px solid #333", borderRadius: "8px", fontSize: "12px", boxSizing: "border-box", fontFamily: "Georgia, serif", resize: "vertical" }} />
                                           <button onClick={() => ekSorulariPaylas(dItem.ders)} disabled={ekPaylasildi}
                                             style={{ width: "100%", marginTop: "6px", padding: "9px", background: ekPaylasildi?"#10b981":"#f59e0b", color: ekPaylasildi?"#fff":"#1a1a2e", border: "none", borderRadius: "8px", fontSize: "12px", fontWeight: "600", cursor: ekPaylasildi?"default":"pointer" }}>
                                             {ekPaylasildi ? "✓ Paylasildi" : "📱 Uygulamada Paylas (cocuk gorur)"}
                                           </button>
+                                          </>
                                         )}
                                       </div>
                                     );
@@ -457,6 +666,123 @@ Sadece istenen icerigi yaz, baska aciklama ekleme. Turkce karakterleri normal ku
       )}
 
       {!seciliGun && <div style={{ textAlign: "center", color: ikincil, fontSize: "12px", padding: "10px" }}>Bir gune tikla, o gunun derslerini ve kazanimlarini gor.</div>}
+
+      {duzenlenenTur && createPortal(
+        <div onClick={() => { if (window.confirm("Kaydetmeden cikilsin mi? Degisiklikler kaybolur.")) setDuzenlenenTur(null); }} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 99999, padding: "16px", boxSizing: "border-box" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#e8e8ec", borderRadius: "12px", width: "100%", maxWidth: "820px", maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }}>
+            <div style={{ background: "#1a1a2e", color: "#fff", padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "14px", fontWeight: "600" }}>✏️ {TUR_BILGI[duzenlenenTur].ad} — Duzenle</span>
+              <button onClick={() => { if (window.confirm("Kaydetmeden cikilsin mi? Degisiklikler kaybolur.")) setDuzenlenenTur(null); }} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "30px", height: "30px", cursor: "pointer", fontSize: "16px", fontWeight: "700" }}>✕</button>
+            </div>
+            {(() => {
+              const sayfalar = a4Sayfalara(duzenMetin);
+              const aktif = Math.min(duzenSayfa, sayfalar.length - 1);
+              // Aktif sayfa duzenlenince tum metni yeniden olustur
+              const sayfaDegis = (yeniSayfaMetni) => {
+                const kopya = [...sayfalar];
+                kopya[aktif] = yeniSayfaMetni;
+                setDuzenMetin(kopya.join("\n"));
+              };
+              return (
+                <>
+                  <div style={{ background: "#374151", display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", padding: "8px" }}>
+                    <button onClick={() => setDuzenSayfa(Math.max(0, aktif - 1))} disabled={aktif === 0}
+                      style={{ background: aktif===0?"#4b5563":"#7c3aed", color: "#fff", border: "none", borderRadius: "6px", width: "36px", height: "32px", cursor: aktif===0?"default":"pointer", fontSize: "16px" }}>◀</button>
+                    <span style={{ color: "#fff", fontSize: "13px", fontWeight: "600", minWidth: "90px", textAlign: "center" }}>Sayfa {aktif + 1} / {sayfalar.length}</span>
+                    <button onClick={() => setDuzenSayfa(Math.min(sayfalar.length - 1, aktif + 1))} disabled={aktif >= sayfalar.length - 1}
+                      style={{ background: aktif>=sayfalar.length-1?"#4b5563":"#7c3aed", color: "#fff", border: "none", borderRadius: "6px", width: "36px", height: "32px", cursor: aktif>=sayfalar.length-1?"default":"pointer", fontSize: "16px" }}>▶</button>
+                  </div>
+                  <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", background: "#9ca3af" }}>
+                    <textarea
+                      value={sayfalar[aktif] || ""}
+                      onChange={(e) => sayfaDegis(e.target.value)}
+                      autoFocus
+                      spellCheck={false}
+                      style={{
+                        display: "block", background: "#fff", width: "100%", maxWidth: "21cm",
+                        margin: "0 auto", padding: "2cm 1.8cm", height: "27cm",
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.3)", fontFamily: "Calibri, Arial, sans-serif",
+                        color: "#1a1a2e", fontSize: "12pt", lineHeight: 1.5, border: "none",
+                        outline: "none", boxSizing: "border-box", resize: "none"
+                      }}
+                    />
+                  </div>
+                </>
+              );
+            })()}
+            <div style={{ background: "#1a1a2e", padding: "12px 18px", display: "flex", gap: "10px" }}>
+              <button onClick={() => duzenleKaydet(duzenlenenTur)} style={{ flex: 1, padding: "12px", background: "#10b981", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", fontWeight: "700", cursor: "pointer" }}>💾 Kaydet ve Kapat</button>
+              <button onClick={() => { if (window.confirm("Kaydetmeden cikilsin mi?")) setDuzenlenenTur(null); }} style={{ padding: "12px 24px", background: "#4b5563", color: "#fff", border: "none", borderRadius: "8px", fontSize: "14px", cursor: "pointer" }}>Iptal</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {havuzAcik && createPortal(
+        <div onClick={() => { setHavuzAcik(false); setHavuzSeciliItem(null); }} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 99999, padding: "16px", boxSizing: "border-box" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#e8e8ec", borderRadius: "12px", width: "100%", maxWidth: "920px", maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }}>
+            <div style={{ background: "#1a1a2e", color: "#fff", padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "14px", fontWeight: "600" }}>📚 Icerik Havuzu — Ogretmenlerin Paylasimlari</span>
+              <button onClick={() => { setHavuzAcik(false); setHavuzSeciliItem(null); }} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "30px", height: "30px", cursor: "pointer", fontSize: "16px", fontWeight: "700" }}>✕</button>
+            </div>
+            {/* Tur sekmeleri */}
+            <div style={{ background: "#252538", display: "flex", gap: "2px", padding: "8px 8px 0", flexShrink: 0 }}>
+              {["anlatim","sorular","odev","ekSorular"].map(tur => {
+                const ikon = tur==="anlatim"?"📘":tur==="sorular"?"❓":tur==="odev"?"📝":"✏️";
+                const adet = (havuzListe[tur] || []).length;
+                const sec = havuzSeciliTur === tur;
+                return (
+                  <button key={tur} onClick={() => { setHavuzSeciliTur(tur); setHavuzSeciliItem(null); }}
+                    style={{ flex: 1, padding: "8px 4px", background: sec?"#e8e8ec":"#1a1a2e", color: sec?"#1a1a2e":"#888", border: "none", borderRadius: "8px 8px 0 0", fontSize: "11px", fontWeight: "600", cursor: "pointer" }}>
+                    {ikon} {tur==="anlatim"?"Konu Anlatimi":tur==="sorular"?"Sinif Sorulari":tur==="odev"?"Ev Odevi":"Uygulama"} ({adet})
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+              {havuzYukleniyor ? (
+                <div style={{ color: "#666", fontSize: "13px", textAlign: "center", padding: "40px" }}>Havuz yukleniyor...</div>
+              ) : (() => {
+                const liste = havuzListe[havuzSeciliTur] || [];
+                if (liste.length === 0) return <div style={{ color: "#888", fontSize: "13px", fontStyle: "italic", textAlign: "center", padding: "40px" }}>Bu turde henuz paylasim yok.</div>;
+                return (
+                  <>
+                    {/* Ogretmen isimleri seritti */}
+                    <div style={{ background: "#d1d5db", padding: "10px", display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: 0, borderBottom: "1px solid #9ca3af" }}>
+                      {liste.map(item => {
+                        const benimki = item.ekleyenUid === ogretmenUid;
+                        const sec = havuzSeciliItem && havuzSeciliItem.id === item.id;
+                        return (
+                          <button key={item.id} onClick={() => setHavuzSeciliItem(item)}
+                            style={{ padding: "6px 12px", background: sec?"#1a1a2e":"#fff", color: sec?"#fff":"#1a1a2e", border: benimki?"2px solid #b45309":"1px solid #9ca3af", borderRadius: "20px", fontSize: "12px", cursor: "pointer", fontWeight: sec?"600":"400" }}>
+                            👤 {item.ekleyenIsim || "Ogretmen"}{benimki && " (sen)"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Onizleme alani */}
+                    <div style={{ flex: 1, padding: "20px", background: "#9ca3af", overflowY: "auto" }}>
+                      {!havuzSeciliItem ? (
+                        <div style={{ color: "#374151", fontSize: "13px", textAlign: "center", padding: "40px" }}>👆 Yukaridan bir ogretmen sec, icerigini gor.</div>
+                      ) : (
+                        <>
+                          <A4Onizleme metin={havuzSeciliItem.metin} />
+                          <div style={{ maxWidth: "21cm", margin: "14px auto 0", display: "flex", gap: "8px", justifyContent: "center", flexWrap: "wrap" }}>
+                            {havuzSeciliTur!=="ekSorular" && <button onClick={() => wordIndir(TUR_BILGI[havuzSeciliTur].ad, havuzSeciliItem.metin, havuzSeciliItem.ders, havuzSeciliItem.konu)} style={{ padding: "10px 20px", background: "#0f6e56", color: "#fff", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: "600", cursor: "pointer" }}>⬇️ Word Indir</button>}
+                            {havuzSeciliTur==="ekSorular" && <button onClick={() => havuzdanPaylas(havuzSeciliItem)} style={{ padding: "10px 20px", background: "#f59e0b", color: "#1a1a2e", border: "none", borderRadius: "8px", fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>📱 Uygulamada Paylas</button>}
+                            {havuzSeciliItem.ekleyenUid === ogretmenUid && <button onClick={() => { havuzSil(havuzSeciliItem.id, havuzSeciliTur); setHavuzSeciliItem(null); }} style={{ padding: "10px 20px", background: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", fontSize: "13px", cursor: "pointer" }}>🗑️ Sil</button>}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

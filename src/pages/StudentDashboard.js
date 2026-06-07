@@ -192,6 +192,11 @@ const GonderiKarti = React.memo(({
                 <div style={{ color: "#4f46e5", fontSize: "10px", fontWeight: "bold", letterSpacing: "0.5px" }}>📱 {(g.dersAd || "").toUpperCase()}{g.konu ? " · " + g.konu.toUpperCase() : ""}</div>
                 <div style={{ color: "#1a1a2e", fontSize: "15px", fontWeight: "bold", marginTop: "2px" }}>Uygulama Sorulari</div>
               </div>
+              {g.ogretmenNotu && (
+                <div style={{ background: "#fef3c7", color: "#92400e", padding: "8px 10px", borderRadius: "8px", marginBottom: "8px", fontSize: "12px" }}>
+                  📝 {g.ogretmenNotu}
+                </div>
+              )}
               <div style={{ color: "#444", fontSize: "12px", lineHeight: 1.6, maxHeight: "72px", overflow: "hidden", position: "relative" }}>
                 {g.sorular}
                 <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "30px", background: "linear-gradient(transparent, #fff)" }} />
@@ -222,6 +227,11 @@ const GonderiKarti = React.memo(({
                   </div>
                   <button onClick={() => setSoruAcik(false)} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "30px", height: "30px", cursor: "pointer", fontSize: "16px", fontWeight: "700", flexShrink: 0 }}>✕</button>
                 </div>
+                {g.ogretmenNotu && (
+                  <div style={{ background: "#fef3c7", color: "#92400e", padding: "12px 14px", borderRadius: "10px", marginBottom: "14px", fontSize: "14px", fontWeight: "600" }}>
+                    📝 Ogretmenin notu: {g.ogretmenNotu}
+                  </div>
+                )}
                 <div style={{ color: "#222", fontSize: "15px", lineHeight: 2, whiteSpace: "pre-wrap" }}>{g.sorular}</div>
                 <div style={{ textAlign: "center", marginTop: "16px", color: "#888", fontSize: "12px" }}>📖 Bu sorulari defterine cozebilirsin</div>
               </div>
