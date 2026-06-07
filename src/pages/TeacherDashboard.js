@@ -3,6 +3,7 @@ import { db, auth } from "../firebase";
 import { doc, getDocFromServer, collection, getDocs, addDoc, orderBy, query, updateDoc, serverTimestamp } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import ProfilSayfasi from "./ProfilSayfasi";
+import Takvim from "./Takvim";
 
 const WORKER_URL = "https://zupii-photos.samsunda-yasamak.workers.dev";
 
@@ -336,6 +337,10 @@ function TeacherDashboard() {
           style={{ flex: 1, padding: "10px", background: aktifSekme === "paylasimlar" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "paylasimlar" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
           📢 Paylasimlarim
         </button>
+        <button onClick={() => setAktifSekme("takvim")}
+          style={{ flex: 1, padding: "10px", background: aktifSekme === "takvim" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "takvim" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px" }}>
+          📅 Plan
+        </button>
         <button onClick={() => setAktifSekme("bildirimler")}
           style={{ flex: 1, padding: "10px", background: aktifSekme === "bildirimler" ? "#4f46e5" : (karanlikMod ? "#374151" : "#e5e7eb"), color: aktifSekme === "bildirimler" ? "white" : (karanlikMod ? "#f3f4f6" : "#374151"), border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "600", fontSize: "13px", position: "relative" }}>
           🚩 Bildirimler
@@ -347,7 +352,9 @@ function TeacherDashboard() {
         </button>
       </div>
 
-      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "paylasimlar" ? (
+      {yukleniyor ? <p style={{ color: yaziRenk }}>Yukleniyor...</p> : aktifSekme === "takvim" ? (
+        <Takvim ogretmenIsmi={ogretmenIsmi} ogretmenUid={auth.currentUser.uid} />
+      ) : aktifSekme === "paylasimlar" ? (
         <div>
           <div style={{ background: kartBg, padding: "20px", borderRadius: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: "20px" }}>
             <p style={{ fontSize: "13px", color: ikincilYazi, margin: "0 0 8px" }}>

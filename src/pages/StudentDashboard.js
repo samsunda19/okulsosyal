@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { db, auth } from "../firebase";
 import { collection, addDoc, getDocs, orderBy, query, serverTimestamp, doc, getDoc, updateDoc, arrayUnion, arrayRemove, where } from "firebase/firestore";
 import { signOut } from "firebase/auth";
@@ -128,6 +129,7 @@ const GonderiKarti = React.memo(({
   onGonderiSil, onBildirimBaslat
 }) => {
   const [begeniAnimasyon, setBegeniAnimasyon] = useState(false);
+  const [soruAcik, setSoruAcik] = useState(false);
   const begenenler = g.begenenler || [];
   const benBegendimMi = begenenler.includes(mevcutKullaniciUid);
   const benimPaylasimim = g.yazarUid === mevcutKullaniciUid;
@@ -184,16 +186,48 @@ const GonderiKarti = React.memo(({
         <p style={{ margin: "0 0 8px 0", fontSize: "13px", color: kartIkincilYazi, fontStyle: "italic" }}>🗑️ Bu gonderi kaldirildi.</p>
       ) : (
         <>
-          {g.icerik && (
-            <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>
-              {ogretmenPostu ? g.icerik.split(/(\bhttps?:\/\/\S+)/g).map((parca, i) =>
-                parca.match(/^https?:\/\//) ? (
-                  <a key={i} href={parca} target="_blank" rel="noopener noreferrer" style={{ color: "#4f46e5", textDecoration: "underline" }}>{parca}</a>
-                ) : parca
-              ) : g.icerik}
-            </p>
+          {g.tip === "uygulamaSorusu" && g.sorular ? (
+            <div onClick={() => setSoruAcik(true)} style={{ cursor: "pointer", background: "#fff", borderRadius: "10px", padding: "14px 16px", border: "1px solid #e0e7ff", marginBottom: "8px" }}>
+              <div style={{ borderBottom: "2px solid #4f46e5", paddingBottom: "6px", marginBottom: "8px" }}>
+                <div style={{ color: "#4f46e5", fontSize: "10px", fontWeight: "bold", letterSpacing: "0.5px" }}>📱 {(g.dersAd || "").toUpperCase()}{g.konu ? " · " + g.konu.toUpperCase() : ""}</div>
+                <div style={{ color: "#1a1a2e", fontSize: "15px", fontWeight: "bold", marginTop: "2px" }}>Uygulama Sorulari</div>
+              </div>
+              <div style={{ color: "#444", fontSize: "12px", lineHeight: 1.6, maxHeight: "72px", overflow: "hidden", position: "relative" }}>
+                {g.sorular}
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "30px", background: "linear-gradient(transparent, #fff)" }} />
+              </div>
+              <div style={{ textAlign: "center", marginTop: "8px", color: "#4f46e5", fontSize: "12px", fontWeight: "600" }}>👆 Buyutmek icin tikla</div>
+            </div>
+          ) : (
+            <>
+              {g.icerik && (
+                <p style={{ margin: "0 0 8px 0", fontSize: "15px", color: kartYazi }}>
+                  {ogretmenPostu ? g.icerik.split(/(\bhttps?:\/\/\S+)/g).map((parca, i) =>
+                    parca.match(/^https?:\/\//) ? (
+                      <a key={i} href={parca} target="_blank" rel="noopener noreferrer" style={{ color: "#4f46e5", textDecoration: "underline" }}>{parca}</a>
+                    ) : parca
+                  ) : g.icerik}
+                </p>
+              )}
+              {g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
+            </>
           )}
-          {g.fotoUrl && <MedyaGoster url={g.fotoUrl} />}
+          {soruAcik && createPortal(
+            <div onClick={() => setSoruAcik(false)} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 99999, padding: "20px", boxSizing: "border-box" }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "12px", padding: "24px", width: "90%", maxWidth: "560px", maxHeight: "85vh", overflowY: "auto", fontFamily: "Arial, sans-serif", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #4f46e5", paddingBottom: "10px", marginBottom: "16px" }}>
+                  <div>
+                    <div style={{ color: "#4f46e5", fontSize: "12px", fontWeight: "bold", letterSpacing: "0.5px" }}>📱 {(g.dersAd || "").toUpperCase()}{g.konu ? " · " + g.konu.toUpperCase() : ""}</div>
+                    <div style={{ color: "#1a1a2e", fontSize: "20px", fontWeight: "bold", marginTop: "2px" }}>Uygulama Sorulari</div>
+                  </div>
+                  <button onClick={() => setSoruAcik(false)} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "30px", height: "30px", cursor: "pointer", fontSize: "16px", fontWeight: "700", flexShrink: 0 }}>✕</button>
+                </div>
+                <div style={{ color: "#222", fontSize: "15px", lineHeight: 2, whiteSpace: "pre-wrap" }}>{g.sorular}</div>
+                <div style={{ textAlign: "center", marginTop: "16px", color: "#888", fontSize: "12px" }}>📖 Bu sorulari defterine cozebilirsin</div>
+              </div>
+            </div>,
+            document.body
+          )}
         </>
       )}
       {bildirdimMi && (
