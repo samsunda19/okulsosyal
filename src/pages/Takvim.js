@@ -39,7 +39,6 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
   // Icerik Havuzu
   const [duzenlenenTur, setDuzenlenenTur] = useState(null); // hangi tur duzenleniyor
   const [duzenMetin, setDuzenMetin] = useState(""); // duzenleme kutusu metni
-  const [duzenSayfa, setDuzenSayfa] = useState(0); // duzenlemede aktif sayfa indexi
   const [havuzaEklendi, setHavuzaEklendi] = useState({}); // {tur: true}
   const [havuzAcik, setHavuzAcik] = useState(false); // havuzdan indir paneli acik mi
   const [havuzListe, setHavuzListe] = useState({}); // {tur: [icerikler]}
@@ -229,7 +228,7 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
     const kazanimMetni = plan.kazanimlar.map(k => k.kod + " - " + k.aciklama).join("; ");
     const tb = TUR_BILGI[tur];
     const ekKural = turkceEkKural(dersAd, kazanimMetni);
-    const sistemPrompt = tb.rol + " KESINLIKLE 4. sinif (9-10 yas, ilkokul) seviyesinde calisirsin: dil sade, sorular basit ve somut olmali. Ortaokul/lise kavramlari KULLANMA. Ilkokulda olmayan arac-gerec verme (ornegin desimetre, hassas terazi gibi). Sadece 4. sinif ogrencisinin bildigi birimleri ve kavramlari kullan. Turkce karakterleri dogru kullanirsin (ç, ş, ğ, ı, ö, ü). Sadece istenen icerigi uretirsin, gereksiz aciklama eklemezsin.";
+    const sistemPrompt = tb.rol + " KESINLIKLE 4. sinif (9-10 yas, ilkokul) seviyesinde calisirsin: dil sade, sorular basit ve somut olmali. Ortaokul/lise kavramlari KULLANMA. Ilkokulda olmayan arac-gerec verme (ornegin desimetre, hassas terazi gibi). Sadece 4. sinif ogrencisinin bildigi birimleri ve kavramlari kullan. Turkce karakterleri dogru kullanirsin (ç, ş, ğ, ı, ö, ü). COK ONEMLI BICIM KURALI: DUZ METIN yaz, Markdown/bicimlendirme isareti KULLANMA. Asla #, ##, ###, **, ---, *, > gibi isaretler koyma. Baslik gerekiyorsa duz yaz (orn: '1. Soru' de, '**1. Soru**' deme). Soru numaralarini '1.', '2.' seklinde duz yaz. Sadece istenen icerigi uretirsin, gereksiz aciklama eklemezsin.";
     const prompt = `Ders: ${dersAd}
 Konu: ${plan.konu}
 Kazanim(lar): ${kazanimMetni}
@@ -254,7 +253,7 @@ Yukaridaki kazanima SIKI SIKIYA bagli kal. Konu disina cikma. Icerigi dogrudan u
       });
       const data = await response.json();
       if (data.error) { setAiHata(data.error.message || "AI hatasi"); setAiYukleniyorTur(null); return; }
-      const metin = (data.content && data.content[0] && data.content[0].text) ? data.content[0].text.trim() : "";
+      const metin = (data.content && data.content[0] && data.content[0].text) ? markdownTemizle(data.content[0].text.trim()) : "";
       setAiIcerik(prev => ({ ...prev, [tur]: metin }));
       setAcikTur(tur);
       // Firebase'e kaydet (tekrar uretmemek icin)
@@ -271,7 +270,21 @@ Yukaridaki kazanima SIKI SIKIYA bagli kal. Konu disina cikma. Icerigi dogrudan u
   };
 
   // ===== PDF indir (basit, yazdir penceresi) =====
+  // Markdown isaretlerini temizle (#, **, ---, * vb. duz metne cevir)
+  const markdownTemizle = (metin) => {
+    if (!metin) return "";
+    return metin
+      .replace(/^\s*#{1,6}\s*/gm, "")        // ### basliklar
+      .replace(/\*\*(.*?)\*\*/g, "$1")        // **kalin**
+      .replace(/\*(.*?)\*/g, "$1")            // *italik*
+      .replace(/^\s*[-*]{3,}\s*$/gm, "")      // --- *** ayraclar
+      .replace(/^\s*>\s?/gm, "")              // > alinti
+      .replace(/`([^`]*)`/g, "$1")            // `kod`
+      .replace(/\n{3,}/g, "\n\n");            // 3+ bos satiri 2'ye indir
+  };
+
   const wordIndir = (baslik, icerik, dersAd2, konu2) => {
+    icerik = markdownTemizle(icerik);
     const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     // Cevap anahtarini ayir (varsa)
     let sorularKismi = icerik, cevapKismi = "";
@@ -357,7 +370,6 @@ Yukaridaki kazanima SIKI SIKIYA bagli kal. Konu disina cikma. Icerigi dogrudan u
   const duzenleBaslat = (tur) => {
     setDuzenlenenTur(tur);
     setDuzenMetin(aiIcerik[tur] || "");
-    setDuzenSayfa(0);
   };
   // Duzenlemeyi kaydet (yerel aiIcerik'e)
   const duzenleKaydet = (tur) => {
@@ -442,7 +454,7 @@ Yukaridaki kazanima SIKI SIKIYA bagli kal. Konu disina cikma. Icerigi dogrudan u
     const satirlar = (metin || "").split("\n");
     const sayfalar = [];
     let buSayfaSatir = [], buSayir = 0;
-    const MAX = 44;
+    const MAX = 50;
     for (const s of satirlar) {
       const yuk = Math.max(1, Math.ceil(s.length / 95));
       if (buSayir + yuk > MAX && buSayfaSatir.length > 0) {
@@ -675,36 +687,35 @@ Yukaridaki kazanima SIKI SIKIYA bagli kal. Konu disina cikma. Icerigi dogrudan u
               <button onClick={() => { if (window.confirm("Kaydetmeden cikilsin mi? Degisiklikler kaybolur.")) setDuzenlenenTur(null); }} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: "30px", height: "30px", cursor: "pointer", fontSize: "16px", fontWeight: "700" }}>✕</button>
             </div>
             {(() => {
-              const sayfalar = a4Sayfalara(duzenMetin);
-              const aktif = Math.min(duzenSayfa, sayfalar.length - 1);
-              // Aktif sayfa duzenlenince tum metni yeniden olustur
-              const sayfaDegis = (yeniSayfaMetni) => {
-                const kopya = [...sayfalar];
-                kopya[aktif] = yeniSayfaMetni;
-                setDuzenMetin(kopya.join("\n"));
-              };
+              // Tek akis duzenleme. lineHeight 12pt * 1.5 = 18pt = 24px. 50 satir = 1200px'de bir cizgi.
+              const satirYuksekligi = 24; // px (12pt fontta 1.5 lineHeight)
+              const sayfaYuksekligi = satirYuksekligi * 50; // 50 satir = 1 sayfa
+              const toplamSatir = (duzenMetin || "").split("\n").reduce((t, s) => t + Math.max(1, Math.ceil(s.length / 95)), 0);
+              const sayfaSayisi = Math.max(1, Math.ceil(toplamSatir / 50));
               return (
                 <>
-                  <div style={{ background: "#374151", display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", padding: "8px" }}>
-                    <button onClick={() => setDuzenSayfa(Math.max(0, aktif - 1))} disabled={aktif === 0}
-                      style={{ background: aktif===0?"#4b5563":"#7c3aed", color: "#fff", border: "none", borderRadius: "6px", width: "36px", height: "32px", cursor: aktif===0?"default":"pointer", fontSize: "16px" }}>◀</button>
-                    <span style={{ color: "#fff", fontSize: "13px", fontWeight: "600", minWidth: "90px", textAlign: "center" }}>Sayfa {aktif + 1} / {sayfalar.length}</span>
-                    <button onClick={() => setDuzenSayfa(Math.min(sayfalar.length - 1, aktif + 1))} disabled={aktif >= sayfalar.length - 1}
-                      style={{ background: aktif>=sayfalar.length-1?"#4b5563":"#7c3aed", color: "#fff", border: "none", borderRadius: "6px", width: "36px", height: "32px", cursor: aktif>=sayfalar.length-1?"default":"pointer", fontSize: "16px" }}>▶</button>
+                  <div style={{ background: "#374151", textAlign: "center", padding: "6px", color: "#fff", fontSize: "12px" }}>
+                    📄 Yaklasik {sayfaSayisi} sayfa · Cizgiler sayfa sonunu gosterir
                   </div>
                   <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", background: "#9ca3af" }}>
                     <textarea
-                      value={sayfalar[aktif] || ""}
-                      onChange={(e) => sayfaDegis(e.target.value)}
+                      value={duzenMetin}
+                      onChange={(e) => setDuzenMetin(e.target.value)}
                       autoFocus
                       spellCheck={false}
                       style={{
-                        display: "block", background: "#fff", width: "100%", maxWidth: "21cm",
-                        margin: "0 auto", padding: "2cm 1.8cm", height: "27cm",
+                        display: "block", width: "100%", maxWidth: "21cm",
+                        margin: "0 auto", padding: "2cm 1.8cm", minHeight: "27cm",
                         boxShadow: "0 4px 16px rgba(0,0,0,0.3)", fontFamily: "Calibri, Arial, sans-serif",
-                        color: "#1a1a2e", fontSize: "12pt", lineHeight: 1.5, border: "none",
-                        outline: "none", boxSizing: "border-box", resize: "none"
+                        color: "#1a1a2e", fontSize: "12pt", lineHeight: "24px", border: "none",
+                        outline: "none", boxSizing: "border-box", resize: "none", overflow: "hidden",
+                        background: "#fff",
+                        backgroundImage: "repeating-linear-gradient(to bottom, transparent, transparent " + (sayfaYuksekligi - 2) + "px, #d1495b 0px, #d1495b " + sayfaYuksekligi + "px)",
+                        backgroundPosition: "0 calc(2cm)",
+                        backgroundAttachment: "local"
                       }}
+                      onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = Math.max(e.target.scrollHeight, 1020) + "px"; }}
+                      ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = Math.max(el.scrollHeight, 1020) + "px"; } }}
                     />
                   </div>
                 </>
