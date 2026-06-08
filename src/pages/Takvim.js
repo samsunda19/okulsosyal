@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { db, auth } from "../firebase";
 import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp, query, where, getDocs, deleteDoc } from "firebase/firestore";
-import { YILLIK_PLAN, DERS_BILGI } from "./yillikPlan";
+import { SINIF_PLANLARI, DERS_BILGI } from "./yillikPlan";
 import { tariheGoreHafta } from "./haftaTakvimi";
 
 const AYLAR = ["Ocak","Subat","Mart","Nisan","Mayis","Haziran","Temmuz","Agustos","Eylul","Ekim","Kasim","Aralik"];
@@ -21,7 +21,8 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
   const [ay, setAy] = useState(bugun.getMonth());
   const [yil, setYil] = useState(bugun.getFullYear());
   const [seciliGun, setSeciliGun] = useState(null); // Date
-  const [dersProgrami, setDersProgrami] = useState({}); // {0:[{ders,saat}],1:[...]} 0=Pzt
+  const [dersProgramlari, setDersProgramlari] = useState({}); // {sinif: {0:[{ders,saat}],...}} sinif bazli, 0=Pzt
+  const [secilenSinif, setSecilenSinif] = useState(4); // aktif sinif seviyesi (simdilik sadece 4 secilebilir)
   const [notlar, setNotlar] = useState({}); // {"2026-06-09":"metin"}
   const [programAcik, setProgramAcik] = useState(false);
   const [acikDers, setAcikDers] = useState(null); // dersKey
@@ -53,7 +54,10 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const d = snap.data();
-          setDersProgrami(d.dersProgrami || {});
+          // Yeni yapi: dersProgramlari (sinif bazli). Eski duz dersProgrami varsa 4. sinif sayilir.
+          if (d.dersProgramlari) setDersProgramlari(d.dersProgramlari);
+          else if (d.dersProgrami) setDersProgramlari({ 4: d.dersProgrami });
+          if (d.sinif) setSecilenSinif(d.sinif);
           setNotlar(d.notlar || {});
         }
       } catch (e) { console.error(e); }
@@ -63,11 +67,12 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
     })();
   }, [ogretmenUid]);
 
-  const takvimKaydet = async (yeniProgram, yeniNotlar) => {
+  const takvimKaydet = async (yeniProgram, yeniNotlar, yeniSinif) => {
     try {
       const ref = doc(db, "ogretmenTakvim", ogretmenUid);
       await setDoc(ref, {
-        dersProgrami: yeniProgram !== undefined ? yeniProgram : dersProgrami,
+        dersProgramlari: yeniProgram !== undefined ? yeniProgram : dersProgramlari,
+        sinif: yeniSinif !== undefined ? yeniSinif : secilenSinif,
         notlar: yeniNotlar !== undefined ? yeniNotlar : notlar,
         guncelleme: serverTimestamp()
       }, { merge: true });
@@ -79,28 +84,30 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
   // Tablo gosterimi icin: gun+saat -> ders adi
   const [tabloTaslak, setTabloTaslak] = useState(null);
   const tabloDeger = (gun, saat) => {
-    const kaynak = tabloTaslak || dersProgrami;
+    const kaynak = tabloTaslak || (dersProgramlari[secilenSinif] || {});
     const liste = kaynak[gun] || [];
     return liste[saat] ? liste[saat].ders : "";
   };
   const tabloDegistir = (gun, saat, deger) => {
-    const taslak = tabloTaslak || JSON.parse(JSON.stringify(dersProgrami));
+    const taslak = tabloTaslak || JSON.parse(JSON.stringify(dersProgramlari[secilenSinif] || {}));
     if (!taslak[gun]) taslak[gun] = [];
     while (taslak[gun].length <= saat) taslak[gun].push({ ders: "", saat: "1" });
     taslak[gun][saat] = { ders: deger, saat: "1" };
     setTabloTaslak({ ...taslak });
   };
   const tabloyuKaydet = () => {
-    const kaynak = tabloTaslak || dersProgrami;
+    const kaynak = tabloTaslak || (dersProgramlari[secilenSinif] || {});
     // Bos dersleri temizle (sondan), her gun icin ardisik dolu dersleri tut
     const temiz = {};
     for (let g = 0; g < 5; g++) {
       const liste = (kaynak[g] || []).filter(d => d.ders && d.ders.trim());
       if (liste.length) temiz[g] = liste;
     }
-    setDersProgrami(temiz);
+    // Sadece aktif sinifin programini guncelle, diger siniflar korunur
+    const yeni = { ...dersProgramlari, [secilenSinif]: temiz };
+    setDersProgramlari(yeni);
     setTabloTaslak(null);
-    takvimKaydet(temiz);
+    takvimKaydet(yeni);
     alert("Ders programi kaydedildi!");
   };
 
@@ -146,7 +153,7 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
     secilenHaftaBilgi = tariheGoreHafta(seciliGun);
     if (secilenHaftaBilgi && secilenHaftaBilgi.haftaNo) {
       planVarMi = true;
-      secilenDersler = dersProgrami[secilenGunIdx] || [];
+      secilenDersler = (dersProgramlari[secilenSinif] || {})[secilenGunIdx] || [];
     }
   }
 
@@ -163,14 +170,16 @@ function Takvim({ ogretmenIsmi, ogretmenUid }) {
     if (!secilenHaftaBilgi || !secilenHaftaBilgi.haftaNo) return null;
     const key = dersKeyBul(dersAd);
     if (!key) return null;
-    const plan = YILLIK_PLAN[secilenHaftaBilgi.haftaNo];
+    const plan = (SINIF_PLANLARI[secilenSinif] || {})[secilenHaftaBilgi.haftaNo];
     return plan ? plan[key] : null;
   };
 
   // ===== AI icerik anahtari (tarih + ders + tur) =====
   const icerikAnahtar = (dersAd, tur) => {
     if (!seciliGun) return null;
-    return ogretmenUid + "_" + gunKey(seciliGun) + "_" + dersAd.replace(/\s/g, "") + "_" + tur;
+    // 4. sinif eski format (geriye uyumluluk), diger siniflar ayri anahtar alir
+    const sinifEk = secilenSinif === 4 ? "" : ("_s" + secilenSinif);
+    return ogretmenUid + "_" + gunKey(seciliGun) + "_" + dersAd.replace(/\s/g, "") + "_" + tur + sinifEk;
   };
 
   // Secili ders acildiginda kayitli icerikleri Firebase'den cek
@@ -480,6 +489,29 @@ Yukaridaki kazanima SIKI SIKIYA bagli kal. Konu disina cikma. Icerigi dogrudan u
 
   return (
     <div style={{ fontFamily: "Georgia, serif", width: "100%", maxWidth: "760px", margin: "0 auto" }}>
+
+      {/* ===== SINIF SECICI ===== */}
+      <div style={{ background: kart, borderRadius: "12px", padding: "14px", marginBottom: "12px" }}>
+        <div style={{ color: yazi, fontSize: "13px", fontWeight: "600", marginBottom: "10px" }}>Lutfen sinifinizi seciniz</div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          {[1, 2, 3, 4].map(s => {
+            const aktif = s === 4; // simdilik sadece 4. sinif planlari yuklu
+            const secili = secilenSinif === s;
+            return (
+              <button key={s} disabled={!aktif}
+                onClick={() => { if (!aktif) return; setSecilenSinif(s); setTabloTaslak(null); setAcikDers(null); takvimKaydet(undefined, undefined, s); }}
+                style={{ flex: 1, padding: "12px 0", borderRadius: "9px", position: "relative", fontSize: "15px", fontWeight: "600",
+                  cursor: aktif ? "pointer" : "not-allowed", opacity: aktif ? 1 : 0.4,
+                  background: secili ? "#4f46e5" : (aktif ? "#15151f" : "#101018"),
+                  color: secili ? "#fff" : (aktif ? yazi : "#555"),
+                  border: secili ? "2px solid #818cf8" : "1px solid #2a2a3e" }}>
+                {s}. Sinif
+                {!aktif && <span style={{ position: "absolute", top: "3px", right: "5px", fontSize: "8px", color: "#777", fontWeight: "400" }}>Yakinda</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* ===== TAKVIM ===== */}
       <div style={{ background: kart, borderRadius: "12px", padding: "14px", marginBottom: "12px" }}>
